@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "../../lib/supabaseClient";
 
 type Company = { id:string; name:string; city:string|null; status:string; package_name:string|null; subscription_ends_at:string|null; created_at:string };
 export default function AdminPage(){
