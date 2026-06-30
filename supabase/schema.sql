@@ -17,3 +17,35 @@ drop policy if exists demo_access_select_own_or_admin on public.demo_access; cre
 drop policy if exists demo_access_admin_all on public.demo_access; create policy demo_access_admin_all on public.demo_access for all using(public.is_admin()) with check(public.is_admin());
 drop policy if exists payments_select_own_or_admin on public.payments; create policy payments_select_own_or_admin on public.payments for select using(public.is_admin() or company_id in(select company_id from public.profiles where profiles.id=auth.uid()));
 drop policy if exists payments_admin_all on public.payments; create policy payments_admin_all on public.payments for all using(public.is_admin()) with check(public.is_admin());
+create table if not exists public.dashboard_metrics (
+  id uuid primary key default uuid_generate_v4(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  risk_score numeric(5,2),
+  critical_stock_count integer default 0,
+  estimated_lost_profit numeric(12,2) default 0,
+  estimated_order_amount numeric(12,2) default 0,
+  ai_suggestion_count integer default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table public.dashboard_metrics enable row level security;
+
+drop policy if exists dashboard_metrics_select_own_or_admin on public.dashboard_metrics;
+create policy dashboard_metrics_select_own_or_admin
+on public.dashboard_metrics
+for select
+using (
+  public.is_admin()
+  or company_id in (
+    select company_id
+    from public.profiles
+    where profiles.id = auth.uid()
+  )
+);
+
+drop policy if exists dashboard_metrics_admin_all on public.dashboard_metrics;
+create policy dashboard_metrics_admin_all
+on public.dashboard_metrics
+for all
+using (public.is_admin())
+with check (public.is_admin());
