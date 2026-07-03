@@ -40,9 +40,7 @@ def load_latest_dataframe(company_id: str, file_type: str):
     }
 
 
-@router.post("/")
-def analyze():
-
+def run_analysis():
     companies = (
         supabase
         .table("companies")
@@ -54,26 +52,19 @@ def analyze():
     if not companies.data:
         return {
             "success": False,
-            "message": "Company bulunamadı."
+            "message": "Company bulunamadı.",
         }
 
     company = companies.data[0]
     company_id = company["id"]
 
-    inventory = load_latest_dataframe(
-        company_id,
-        "inventory",
-    )
+    inventory = load_latest_dataframe(company_id, "inventory")
+    sales = load_latest_dataframe(company_id, "sales")
 
-    sales = load_latest_dataframe(
-        company_id,
-        "sales",
-    )
+    product_sales = load_latest_dataframe(company_id, "product_sales")
 
-    product_sales = load_latest_dataframe(
-        company_id,
-        "product_sales",
-    )
+    if product_sales["df"] is None:
+        product_sales = load_latest_dataframe(company_id, "product")
 
     inventory_df = inventory["df"]
     sales_df = sales["df"]
@@ -83,33 +74,24 @@ def analyze():
     finance_metrics = None
     order_suggestions = None
     risk_metrics = None
-    dashboard_metrics = None
 
-    # Inventory Analysis
     if inventory_df is not None:
-        inventory_metrics = calculate_inventory_metrics(
-            inventory_df
-        )
+        inventory_metrics = calculate_inventory_metrics(inventory_df)
 
-    # Finance Analysis
     if sales_df is not None:
-        finance_metrics = calculate_finance_metrics(
-            sales_df
-        )
+        finance_metrics = calculate_finance_metrics(sales_df)
 
-    # Order Suggestions
-    if product_df is not None:
+    if inventory_df is not None:
         order_suggestions = calculate_order_suggestions(
-            product_df
+            inventory_df=inventory_df,
+            product_df=product_df,
         )
 
-    # Risk Analysis
     risk_metrics = calculate_risk_metrics(
         inventory_df=inventory_df,
         product_df=product_df,
     )
 
-    # Dashboard Metrics
     dashboard_metrics = upsert_dashboard_metrics(
         company_id=company_id,
         inventory_metrics=inventory_metrics,
@@ -132,3 +114,23 @@ def analyze():
         "risk_metrics": risk_metrics,
         "dashboard_metrics": dashboard_metrics,
     }
+
+
+@router.get("/")
+def analyze_get():
+    return run_analysis()
+
+
+@router.post("/")
+def analyze_post():
+    return run_analysis()
+
+
+@router.get("")
+def analyze_get_no_slash():
+    return run_analysis()
+
+
+@router.post("")
+def analyze_post_no_slash():
+    return run_analysis()
