@@ -1,0 +1,14 @@
+[33mcommit 1473df558c72a8e564542d86b6a066d7e469a854[m
+Author: may11224 <39835412+may1122@users.noreply.github.com>
+Date:   Fri Jul 3 14:33:19 2026 +0000
+
+    Sprint 3 - Dashboard, Morning Briefing and Operation Center
+
+ app/dashboard/page.tsx                                  | 511 [32m+++++++++++++++++++++++++++++++++++[m[31m---------[m
+ app/globals.css                                         |  41 [32m++++[m
+ app/services/finance_engine.py                          |  24 [31m---[m
+ backend/app/__pycache__/main.cpython-312.pyc            | Bin [31m822[m -> [32m1156[m bytes
+ backend/app/main.py                                     |  15 [32m+[m[31m-[m
+ backend/app/routers/__pycache__/analyze.cpython-312.pyc | Bin [31m2769[m -> [32m3515[m bytes
+ backend/app/routers/analyze.py                          |  64 [32m+++[m[31m---[m
+ 7 files changed, 501 insertions(+), 154 deletions(-)

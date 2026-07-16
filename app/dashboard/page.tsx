@@ -335,6 +335,8 @@ export default function DashboardPage() {
               ? "Eczanenizin genel sağlık durumu, veri yükleme ve son analiz özeti."
               : activeModule === "☀️ Sabah Brifingi"
               ? "Günün başlangıcında eczanenizin hızlı karar özetini görün."
+              : activeModule === "📦 Operasyon Merkezi"
+              ? "Stok durumunu ve sipariş önerilerini tek ekranda inceleyin."
               : "Bu modül Sprint 3 içinde adım adım aktif hale getirilecek."}
           </p>
         </section>
@@ -694,7 +696,6 @@ export default function DashboardPage() {
 
         {activeModule === "📦 Operasyon Merkezi" && (
           <section className="insight-card">
-            <h2>📦 Operasyon Merkezi</h2>
             <p>Stok ve sipariş önerileriniz.</p>
 
             <section className="insight-kpi-grid">

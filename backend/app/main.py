@@ -1,19 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import analyze
+from app.routers.analyze import router as analyze_router
 
 
 app = FastAPI(
     title="AYÇA Insight API",
-    version="1.0.0",
+    version="0.1.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://congenial-trout-g7965j94493jwg-3000.app.github.dev",
     ],
     allow_origin_regex=r"https://.*-3000\.app\.github\.dev",
     allow_credentials=True,
@@ -21,18 +20,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(analyze.router)
-
 
 @app.get("/")
 def root():
     return {
-        "message": "AYÇA Insight API",
+        "success": True,
+        "message": "AYÇA Insight API çalışıyor.",
     }
 
 
 @app.get("/health")
-def health():
+def health_check():
     return {
-        "status": "ok",
+        "success": True,
+        "status": "healthy",
     }
+
+
+app.include_router(analyze_router)
