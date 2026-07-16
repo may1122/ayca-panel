@@ -31,6 +31,28 @@ type OrderSuggestion = {
   "Öncelik": string;
 };
 
+type MorningBriefing = {
+  success: boolean;
+  score: number;
+  status: string;
+  score_items: Record<string, number>;
+  top_actions: string[];
+  strong: string[];
+  watch: string[];
+  urgent: string[];
+  result: string;
+  summary: {
+    zero_stock_count: number;
+    critical_stock_count: number;
+    over_stock_count: number;
+    suggestion_count: number;
+    estimated_order_budget: number;
+    total_turnover: number;
+    average_sale: number;
+    transaction_count: number;
+  };
+};
+
 type AnalyzeResult = {
   success: boolean;
   dashboard_metrics?: DashboardMetrics[] | DashboardMetrics | null;
@@ -46,6 +68,7 @@ type AnalyzeResult = {
     critical_stock_count?: number;
     risk_score?: number;
   };
+  morning_briefing?: MorningBriefing | null;
 };
 
 const API_URL =
@@ -227,6 +250,8 @@ export default function DashboardPage() {
 
   const orderSuggestions =
     analyzeResult?.order_suggestions?.top_suggestions ?? [];
+
+  const morningBriefing = analyzeResult?.morning_briefing ?? null;
 
   const overStockCount =
     analyzeResult?.risk_metrics?.over_stock_count ?? null;
@@ -535,48 +560,134 @@ export default function DashboardPage() {
         {activeModule === "☀️ Sabah Brifingi" && (
           <section className="insight-card">
             <h2>☀️ Sabah Brifingi</h2>
-            <p>Bugünkü eczane durumunuzun hızlı özeti.</p>
+            <p>Bugünkü eczane durumunuzun hızlı ve aksiyon odaklı özeti.</p>
 
-            <div className="analysis-summary">
-              <p>
-                ✅ Risk seviyesi:{" "}
-                <strong>
-                  {metrics?.risk_score !== null && metrics?.risk_score !== undefined
-                    ? metrics.risk_score < 1
-                      ? "Düşük"
-                      : "Kontrol edilmeli"
-                    : "-"}
-                </strong>
-              </p>
+            {morningBriefing ? (
+              <>
+                <section className="insight-kpi-grid">
+                  <div className="insight-kpi">
+                    <span>Eczane Sağlık Skoru</span>
+                    <strong>{morningBriefing.score}/100</strong>
+                    <p>{morningBriefing.status}</p>
+                  </div>
 
-              <p>
-                📦 Kritik stok:{" "}
-                <strong>{metrics?.critical_stock_count ?? "-"}</strong> ürün
-              </p>
+                  <div className="insight-kpi">
+                    <span>Kritik Stok</span>
+                    <strong>{morningBriefing.summary.critical_stock_count}</strong>
+                    <p>Kontrol edilmesi gereken ürün</p>
+                  </div>
 
-              <p>
-                ⚠️ Yüksek stok:{" "}
-                <strong>{overStockCount ?? "-"}</strong> ürün
-              </p>
+                  <div className="insight-kpi">
+                    <span>Fazla Stok</span>
+                    <strong>{morningBriefing.summary.over_stock_count}</strong>
+                    <p>Bağlı sermaye sinyali</p>
+                  </div>
 
-              <p>
-                💰 Önerilen sipariş bütçesi:{" "}
-                <strong>
-                  {estimatedOrderAmount
-                    ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
-                    : "-"}
-                </strong>
-              </p>
+                  <div className="insight-kpi">
+                    <span>Sipariş Önerisi</span>
+                    <strong>{morningBriefing.summary.suggestion_count}</strong>
+                    <p>
+                      {morningBriefing.summary.estimated_order_budget.toLocaleString("tr-TR")} ₺
+                    </p>
+                  </div>
+                </section>
 
-              <p>
-                🤖 AI Yorumu:{" "}
-                <strong>
-                  {metrics
-                    ? "Stok seviyeniz genel olarak sağlıklı görünüyor. Yüksek stoklu ürünleri ve önerilen sipariş listesini gözden geçirmeniz önerilir."
-                    : "Analiz yapıldıktan sonra AI yorumu burada görünecek."}
-                </strong>
-              </p>
-            </div>
+                <section className="insight-card">
+                  <h2>🩺 Sağlık Skoru Detayı</h2>
+                  <h1
+                    style={{
+                      fontSize: 56,
+                      marginBottom: 10,
+                      color: "#0f766e",
+                    }}
+                  >
+                    {morningBriefing.score}/100
+                  </h1>
+
+                  <progress
+                    value={morningBriefing.score}
+                    max={100}
+                    style={{
+                      width: "100%",
+                      height: 14,
+                      marginBottom: 20,
+                    }}
+                  />
+
+                  <div className="analysis-summary">
+                    {Object.entries(morningBriefing.score_items).map(
+                      ([label, value]) => (
+                        <p key={label}>
+                          {label}: <strong>{value}/100</strong>
+                        </p>
+                      )
+                    )}
+                  </div>
+                </section>
+
+                <section className="insight-main-grid">
+                  <div className="insight-card">
+                    <h2>🤖 AYÇA Bugün Ne Diyor?</h2>
+                    <div className="analysis-summary">
+                      {morningBriefing.top_actions.map((item, index) => (
+                        <p key={index}>☑ {item}</p>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="insight-card">
+                    <h2>✅ Güçlü Yönler</h2>
+                    <div className="analysis-summary">
+                      {morningBriefing.strong.length > 0 ? (
+                        morningBriefing.strong.map((item, index) => (
+                          <p key={index}>🟢 {item}</p>
+                        ))
+                      ) : (
+                        <p>Henüz güçlü yön verisi oluşmadı.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="insight-card">
+                    <h2>🟡 Takip Edilecekler</h2>
+                    <div className="analysis-summary">
+                      {morningBriefing.watch.length > 0 ? (
+                        morningBriefing.watch.map((item, index) => (
+                          <p key={index}>🟡 {item}</p>
+                        ))
+                      ) : (
+                        <p>Takip gerektiren ek konu görünmüyor.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="insight-card">
+                    <h2>🔴 Acil Konular</h2>
+                    <div className="analysis-summary">
+                      {morningBriefing.urgent.length > 0 ? (
+                        morningBriefing.urgent.map((item, index) => (
+                          <p key={index}>🔴 {item}</p>
+                        ))
+                      ) : (
+                        <p>Acil müdahale gerektiren konu görünmüyor.</p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="insight-card">
+                  <h2>📌 Yönetici Sonucu</h2>
+                  <p>{morningBriefing.result}</p>
+                </section>
+              </>
+            ) : (
+              <div className="analysis-summary">
+                <p>
+                  Analiz yapıldıktan sonra sağlık skoru, aksiyonlar ve AYÇA
+                  yorumu burada görünecek.
+                </p>
+              </div>
+            )}
           </section>
         )}
 
