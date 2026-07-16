@@ -1,10 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from app.services.supabase_client import supabase
-from app.services.excel_reader import (
-    get_latest_file_upload,
-    read_excel_dataframe_from_storage,
-)
+from app.services.excel_reader import read_excel_dataframe_from_storage
 from app.services.analysis_engine import calculate_inventory_metrics
 from app.services.finance_engine import calculate_finance_metrics
 from app.services.order_engine import calculate_order_suggestions
@@ -19,92 +17,97 @@ router = APIRouter(
 )
 
 
-def load_latest_dataframe(company_id: str, file_type: str):
-    uploaded_file = get_latest_file_upload(
-        company_id=company_id,
-        file_type=file_type,
-    )
-
-    if not uploaded_file:
-        return {
-            "file": None,
-            "df": None,
-        }
-
-    df = read_excel_dataframe_from_storage(
-        uploaded_file["storage_path"]
-    )
-
-    return {
-        "file": uploaded_file,
-        "df": df,
-    }
+class AnalyzeRequest(BaseModel):
+    company_id: str = Field(min_length=1)
+    inventory_path: str = Field(min_length=1)
+    sales_path: str = Field(min_length=1)
+    product_path: str = Field(min_length=1)
 
 
-def run_analysis():
-    companies = (
+def validate_company(company_id: str):
+    result = (
         supabase
         .table("companies")
         .select("id,name,status")
+        .eq("id", company_id)
         .limit(1)
         .execute()
     )
 
-    if not companies.data:
-        return {
-            "success": False,
-            "message": "Company bulunamadı.",
-        }
+    if not result.data:
+        raise HTTPException(
+            status_code=404,
+            detail="Şirket bulunamadı.",
+        )
 
-    company = companies.data[0]
-    company_id = company["id"]
+    return result.data[0]
 
-    inventory = load_latest_dataframe(
-        company_id,
-        "inventory",
+
+def validate_storage_path(company_id: str, storage_path: str, label: str):
+    expected_prefix = f"{company_id}/"
+
+    if not storage_path.startswith(expected_prefix):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} dosyası bu şirkete ait görünmüyor.",
+        )
+
+
+def load_dataframe(storage_path: str, label: str):
+    try:
+        return read_excel_dataframe_from_storage(storage_path)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} dosyası okunamadı: {exc}",
+        ) from exc
+
+
+def run_analysis(payload: AnalyzeRequest):
+    company = validate_company(payload.company_id)
+
+    validate_storage_path(
+        payload.company_id,
+        payload.inventory_path,
+        "Envanter",
+    )
+    validate_storage_path(
+        payload.company_id,
+        payload.sales_path,
+        "Satış",
+    )
+    validate_storage_path(
+        payload.company_id,
+        payload.product_path,
+        "Ürün satış",
     )
 
-    sales = load_latest_dataframe(
-        company_id,
-        "sales",
+    inventory_df = load_dataframe(
+        payload.inventory_path,
+        "Envanter",
+    )
+    sales_df = load_dataframe(
+        payload.sales_path,
+        "Satış",
+    )
+    product_df = load_dataframe(
+        payload.product_path,
+        "Ürün satış",
     )
 
-    product_sales = load_latest_dataframe(
-        company_id,
-        "product_sales",
+    inventory_metrics = calculate_inventory_metrics(
+        inventory_df
     )
 
-    if product_sales["df"] is None:
-        product_sales = load_latest_dataframe(
-            company_id,
-            "product",
-        )
+    finance_metrics = calculate_finance_metrics(
+        sales_df=sales_df,
+        product_df=product_df,
+    )
 
-    inventory_df = inventory["df"]
-    sales_df = sales["df"]
-    product_df = product_sales["df"]
-
-    inventory_metrics = None
-    finance_metrics = None
-    order_suggestions = None
-    risk_metrics = None
-    morning_briefing = None
-
-    if inventory_df is not None:
-        inventory_metrics = calculate_inventory_metrics(
-            inventory_df
-        )
-
-    if sales_df is not None:
-        finance_metrics = calculate_finance_metrics(
-            sales_df
-        )
-
-    if inventory_df is not None:
-        order_suggestions = calculate_order_suggestions(
-            inventory_df=inventory_df,
-            product_df=product_df,
-        )
+    order_suggestions = calculate_order_suggestions(
+        inventory_df=inventory_df,
+        product_df=product_df,
+    )
 
     risk_metrics = calculate_risk_metrics(
         inventory_df=inventory_df,
@@ -119,7 +122,7 @@ def run_analysis():
     )
 
     dashboard_metrics = upsert_dashboard_metrics(
-        company_id=company_id,
+        company_id=payload.company_id,
         inventory_metrics=inventory_metrics,
         finance_metrics=finance_metrics,
         order_suggestions=order_suggestions,
@@ -130,9 +133,15 @@ def run_analysis():
         "success": True,
         "company": company,
         "files": {
-            "inventory": inventory["file"],
-            "sales": sales["file"],
-            "product_sales": product_sales["file"],
+            "inventory": {
+                "storage_path": payload.inventory_path,
+            },
+            "sales": {
+                "storage_path": payload.sales_path,
+            },
+            "product_sales": {
+                "storage_path": payload.product_path,
+            },
         },
         "inventory_metrics": inventory_metrics,
         "finance_metrics": finance_metrics,
@@ -143,21 +152,27 @@ def run_analysis():
     }
 
 
+@router.post("/")
+def analyze_post(payload: AnalyzeRequest):
+    return run_analysis(payload)
+
+
+@router.post("")
+def analyze_post_no_slash(payload: AnalyzeRequest):
+    return run_analysis(payload)
+
+
 @router.get("/")
 def analyze_get():
-    return run_analysis()
-
-
-@router.post("/")
-def analyze_post():
-    return run_analysis()
+    return {
+        "success": True,
+        "message": "Analiz için POST isteği ve üç dosya yolu gönderilmelidir.",
+    }
 
 
 @router.get("")
 def analyze_get_no_slash():
-    return run_analysis()
-
-
-@router.post("")
-def analyze_post_no_slash():
-    return run_analysis()
+    return {
+        "success": True,
+        "message": "Analiz için POST isteği ve üç dosya yolu gönderilmelidir.",
+    }

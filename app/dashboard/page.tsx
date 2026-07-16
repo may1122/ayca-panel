@@ -53,6 +53,37 @@ type MorningBriefing = {
   };
 };
 
+type FinanceDailyRevenue = {
+  day: string;
+  label: string;
+  revenue: number;
+  profit?: number;
+};
+
+type FinanceProduct = {
+  product_name: string;
+  quantity_sold: number;
+  turnover: number;
+  profit: number;
+};
+
+type CapitalProduct = {
+  product_name: string;
+  stock: number;
+  sold_quantity: number;
+  stock_value: number;
+  status: string;
+};
+
+type RiskProduct = {
+  product_name: string;
+  risk_type: string;
+  stock: number;
+  sold_quantity: number;
+  level: string;
+  recommended_action: string;
+};
+
 type AnalyzeResult = {
   success: boolean;
   dashboard_metrics?: DashboardMetrics[] | DashboardMetrics | null;
@@ -62,11 +93,24 @@ type AnalyzeResult = {
     estimated_order_budget?: number;
     suggestion_count?: number;
   };
+  finance_metrics?: {
+    success?: boolean;
+    total_turnover?: number;
+    average_sale?: number;
+    transaction_count?: number;
+    total_profit?: number;
+    total_cost?: number;
+    profit_margin?: number;
+    daily_revenue?: FinanceDailyRevenue[];
+    top_products?: FinanceProduct[];
+  };
   risk_metrics?: {
     over_stock_count?: number;
     zero_stock_count?: number;
     critical_stock_count?: number;
     risk_score?: number;
+    risk_products?: RiskProduct[];
+    capital_products?: CapitalProduct[];
   };
   morning_briefing?: MorningBriefing | null;
 };
@@ -147,10 +191,10 @@ export default function DashboardPage() {
   async function uploadFile(
     file: File | null,
     fileType: "inventory" | "sales" | "product"
-  ) {
+  ): Promise<string | null> {
     if (!file || !companyId || !userId) {
       alert("Dosya veya kullanıcı bilgisi eksik.");
-      return false;
+      return null;
     }
 
     const safeFileName = file.name
@@ -167,7 +211,7 @@ export default function DashboardPage() {
     if (uploadError) {
       console.error("Upload error:", uploadError);
       alert("Dosya yüklenirken hata oluştu.");
-      return false;
+      return null;
     }
 
     const { error: dbError } = await supabase.from("file_uploads").insert({
@@ -183,33 +227,66 @@ export default function DashboardPage() {
       console.error("Database error raw:", dbError);
       console.error("Database error json:", JSON.stringify(dbError, null, 2));
       alert("Dosya yüklendi ama kayıt oluşturulamadı.");
-      return false;
+      return null;
     }
 
-    return true;
+    return filePath;
   }
 
   async function startAnalysis() {
+    if (!companyId || !userId) {
+      alert("Şirket veya kullanıcı bilgisi henüz yüklenmedi.");
+      return;
+    }
+
+    if (!inventoryFile || !salesFile || !productFile) {
+      alert(
+        "Analiz için Envanter, Satış ve Ürün Satış dosyalarının üçünü de seçiniz."
+      );
+      return;
+    }
+
     try {
       setIsAnalyzing(true);
 
-      if (inventoryFile) {
-        const ok = await uploadFile(inventoryFile, "inventory");
-        if (!ok) return;
+      const inventoryPath = await uploadFile(
+        inventoryFile,
+        "inventory"
+      );
+
+      if (!inventoryPath) {
+        return;
       }
 
-      if (salesFile) {
-        const ok = await uploadFile(salesFile, "sales");
-        if (!ok) return;
+      const salesPath = await uploadFile(
+        salesFile,
+        "sales"
+      );
+
+      if (!salesPath) {
+        return;
       }
 
-      if (productFile) {
-        const ok = await uploadFile(productFile, "product");
-        if (!ok) return;
+      const productPath = await uploadFile(
+        productFile,
+        "product"
+      );
+
+      if (!productPath) {
+        return;
       }
 
       const response = await fetch(API_URL, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          company_id: companyId,
+          inventory_path: inventoryPath,
+          sales_path: salesPath,
+          product_path: productPath,
+        }),
       });
 
       const result: AnalyzeResult = await response.json();
@@ -217,13 +294,22 @@ export default function DashboardPage() {
       console.log("Analyze result:", result);
 
       if (!response.ok || !result.success) {
-        alert("Analiz sırasında hata oluştu.");
+        const errorMessage =
+          typeof result === "object" &&
+          result !== null &&
+          "detail" in result
+            ? String(result.detail)
+            : "Analiz sırasında hata oluştu.";
+
+        alert(errorMessage);
         return;
       }
 
       setAnalyzeResult(result);
 
-      const latestMetrics = Array.isArray(result.dashboard_metrics)
+      const latestMetrics = Array.isArray(
+        result.dashboard_metrics
+      )
         ? result.dashboard_metrics[0]
         : result.dashboard_metrics;
 
@@ -231,7 +317,9 @@ export default function DashboardPage() {
         setMetrics(latestMetrics);
       }
 
-      alert("Analiz tamamlandı.");
+      alert(
+        "Analiz tamamlandı. Seçtiğiniz üç yeni dosya kullanıldı."
+      );
     } catch (error) {
       console.error("Analyze error:", error);
       alert("Analiz başlatılırken hata oluştu.");
@@ -253,31 +341,44 @@ export default function DashboardPage() {
 
   const morningBriefing = analyzeResult?.morning_briefing ?? null;
 
-  const financeDailyRevenue = [
-    { day: "Pzt", value: 820000 },
-    { day: "Sal", value: 1040000 },
-    { day: "Çar", value: 930000 },
-    { day: "Per", value: 1180000 },
-    { day: "Cum", value: 1260000 },
-    { day: "Cmt", value: 1100000 },
-    { day: "Paz", value: 785000 },
-  ];
+  const financeDailyRevenue = (
+    analyzeResult?.finance_metrics?.daily_revenue ?? []
+  )
+    .slice(-7)
+    .map((item) => ({
+      day: item.label,
+      value: item.revenue,
+    }));
 
-  const financeTopProducts = [
-    { name: "Dolorex 50 mg", sales: 350, profit: 95000 },
-    { name: "Arveles 25 mg", sales: 280, profit: 81000 },
-    { name: "Vermidon 500 mg", sales: 240, profit: 74000 },
-    { name: "Pankreoflat", sales: 185, profit: 58000 },
-    { name: "Parol 500 mg", sales: 170, profit: 51000 },
-  ];
+  const financeTopProducts = (
+    analyzeResult?.finance_metrics?.top_products ?? []
+  ).map((product) => ({
+    name: product.product_name,
+    sales: product.quantity_sold,
+    profit: product.profit,
+    turnover: product.turnover,
+  }));
 
-  const financeCapitalProducts = [
-    { name: "Yavaş Hareket Eden Ürün A", stock: 145, value: 43000 },
-    { name: "Yavaş Hareket Eden Ürün B", stock: 121, value: 38000 },
-    { name: "Yavaş Hareket Eden Ürün C", stock: 96, value: 31000 },
-    { name: "Yavaş Hareket Eden Ürün D", stock: 82, value: 26000 },
-    { name: "Yavaş Hareket Eden Ürün E", stock: 74, value: 22000 },
-  ];
+  const financeCapitalProducts = (
+    analyzeResult?.risk_metrics?.capital_products ?? []
+  ).map((product) => ({
+    name: product.product_name,
+    stock: product.stock,
+    soldQuantity: product.sold_quantity,
+    value: product.stock_value,
+    status: product.status,
+  }));
+
+  const riskProducts = (
+    analyzeResult?.risk_metrics?.risk_products ?? []
+  ).map((product) => ({
+    name: product.product_name,
+    category: product.risk_type,
+    stock: product.stock,
+    sales: product.sold_quantity,
+    level: product.level,
+    action: product.recommended_action,
+  }));
 
   const overStockCount =
     analyzeResult?.risk_metrics?.over_stock_count ?? null;
@@ -299,6 +400,44 @@ export default function DashboardPage() {
     ...financeDailyRevenue.map((item) => item.value),
     1
   );
+
+  const zeroStockCount =
+    analyzeResult?.risk_metrics?.zero_stock_count ??
+    morningBriefing?.summary.zero_stock_count ??
+    0;
+
+  const criticalStockCount =
+    analyzeResult?.risk_metrics?.critical_stock_count ??
+    metrics?.critical_stock_count ??
+    morningBriefing?.summary.critical_stock_count ??
+    0;
+
+  const rawRiskScore =
+    analyzeResult?.risk_metrics?.risk_score ?? metrics?.risk_score ?? 0;
+
+  const riskHealthScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        100 -
+          rawRiskScore * 12 -
+          criticalStockCount * 2 -
+          zeroStockCount * 3 -
+          (overStockCount ?? 0)
+      )
+    )
+  );
+
+  const riskStatus =
+    riskHealthScore >= 85
+      ? "🟢 Kontrollü"
+      : riskHealthScore >= 70
+      ? "🟡 Dikkat"
+      : "🔴 Yüksek Risk";
+
+  const totalRiskItems =
+    criticalStockCount + zeroStockCount + (overStockCount ?? 0);
 
   const healthScore = Math.max(
     0,
@@ -383,6 +522,8 @@ export default function DashboardPage() {
               ? "Stok durumunu ve sipariş önerilerini tek ekranda inceleyin."
               : activeModule === "💰 Finans Merkezi"
               ? "Ciro, işlem hacmi, ortalama sepet ve finansal performansı tek ekranda inceleyin."
+              : activeModule === "🚨 Risk Merkezi"
+              ? "Kritik stok, sıfır stok, fazla stok ve kayıp kâr risklerini tek ekranda yönetin."
               : "Bu modül Sprint 3 içinde adım adım aktif hale getirilecek."}
           </p>
         </section>
@@ -907,7 +1048,7 @@ export default function DashboardPage() {
 
             <section className="insight-card">
               <h2>📊 Günlük Ciro Dağılımı</h2>
-              <p>Haftanın günlerine göre satış performansı</p>
+              <p>Son 7 günlük gerçek satış performansı</p>
 
               <div className="finance-chart">
                 {financeDailyRevenue.map((item) => {
@@ -946,20 +1087,28 @@ export default function DashboardPage() {
                       <tr>
                         <th>Ürün</th>
                         <th>Satış</th>
-                        <th>Tahmini Kâr</th>
+                        <th>Gerçek Kâr</th>
                       </tr>
                     </thead>
 
                     <tbody>
-                      {financeTopProducts.map((product) => (
-                        <tr key={product.name}>
-                          <td>{product.name}</td>
-                          <td>{product.sales}</td>
-                          <td>
-                            {product.profit.toLocaleString("tr-TR")} ₺
+                      {financeTopProducts.length > 0 ? (
+                        financeTopProducts.map((product) => (
+                          <tr key={product.name}>
+                            <td>{product.name}</td>
+                            <td>{product.sales}</td>
+                            <td>
+                              {product.profit.toLocaleString("tr-TR")} ₺
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={3}>
+                            Analiz sonrası gerçek ürün verileri burada görünecek.
                           </td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -979,13 +1128,21 @@ export default function DashboardPage() {
                     </thead>
 
                     <tbody>
-                      {financeCapitalProducts.map((product) => (
-                        <tr key={product.name}>
-                          <td>{product.name}</td>
-                          <td>{product.stock}</td>
-                          <td>{product.value.toLocaleString("tr-TR")} ₺</td>
+                      {financeCapitalProducts.length > 0 ? (
+                        financeCapitalProducts.map((product) => (
+                          <tr key={product.name}>
+                            <td>{product.name}</td>
+                            <td>{product.stock}</td>
+                            <td>{product.value.toLocaleString("tr-TR")} ₺</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={3}>
+                            Sermaye bağlayan gerçek ürün bulunamadı.
+                          </td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1072,10 +1229,292 @@ export default function DashboardPage() {
           </>
         )}
 
+        {activeModule === "🚨 Risk Merkezi" && (
+          <>
+            <section className="insight-kpi-grid">
+              <div className="insight-kpi risk-kpi risk-kpi-score">
+                <span>🚨 Risk Skoru</span>
+                <strong>{rawRiskScore}</strong>
+                <p>Analiz motorunun ürettiği risk seviyesi</p>
+              </div>
+
+              <div className="insight-kpi risk-kpi risk-kpi-danger">
+                <span>🔴 Kritik Stok</span>
+                <strong>{criticalStockCount}</strong>
+                <p>Kayıp satış riski bulunan ürün</p>
+              </div>
+
+              <div className="insight-kpi risk-kpi risk-kpi-warning">
+                <span>🟡 Sıfır Stok</span>
+                <strong>{zeroStockCount}</strong>
+                <p>Stokta bulunmayan ürün</p>
+              </div>
+
+              <div className="insight-kpi risk-kpi risk-kpi-overstock">
+                <span>📦 Fazla Stok</span>
+                <strong>{overStockCount ?? "-"}</strong>
+                <p>Sermaye bağlama riski bulunan ürün</p>
+              </div>
+
+              <div className="insight-kpi risk-kpi risk-kpi-loss">
+                <span>💸 Tahmini Kayıp Kâr</span>
+                <strong>
+                  {metrics?.estimated_lost_profit
+                    ? `${metrics.estimated_lost_profit.toLocaleString(
+                        "tr-TR"
+                      )} ₺`
+                    : "-"}
+                </strong>
+                <p>Stok kaynaklı finansal risk</p>
+              </div>
+            </section>
+
+            <section className="risk-summary-grid">
+              <div className="insight-card risk-health-card">
+                <div className="risk-card-heading">
+                  <div>
+                    <h2>🛡️ Risk Sağlık Skoru</h2>
+                    <p>Stok ve finansal risklerin birleşik görünümü</p>
+                  </div>
+                  <span className="risk-status-badge">{riskStatus}</span>
+                </div>
+
+                <div className="risk-score-row">
+                  <div>
+                    <strong>{riskHealthScore}</strong>
+                    <span>/100</span>
+                  </div>
+
+                  <div className="risk-score-copy">
+                    <b>{riskStatus}</b>
+                    <p>Toplam {totalRiskItems} risk sinyali takip ediliyor.</p>
+                  </div>
+                </div>
+
+                <progress
+                  value={riskHealthScore}
+                  max={100}
+                  className="risk-progress"
+                />
+              </div>
+
+              <div className="insight-card risk-distribution-card">
+                <h2>🥧 Risk Dağılımı</h2>
+                <p>Risklerin türlerine göre dağılımı</p>
+
+                <div className="risk-donut-layout">
+                  <div
+                    className="risk-donut"
+                    style={{
+                      background: `conic-gradient(
+                        #ef4444 0deg ${
+                          totalRiskItems > 0
+                            ? (criticalStockCount / totalRiskItems) * 360
+                            : 0
+                        }deg,
+                        #f59e0b ${
+                          totalRiskItems > 0
+                            ? (criticalStockCount / totalRiskItems) * 360
+                            : 0
+                        }deg ${
+                          totalRiskItems > 0
+                            ? ((criticalStockCount + zeroStockCount) /
+                                totalRiskItems) *
+                              360
+                            : 0
+                        }deg,
+                        #6366f1 ${
+                          totalRiskItems > 0
+                            ? ((criticalStockCount + zeroStockCount) /
+                                totalRiskItems) *
+                              360
+                            : 0
+                        }deg 360deg
+                      )`,
+                    }}
+                  >
+                    <div className="risk-donut-center">
+                      <strong>{totalRiskItems}</strong>
+                      <span>Toplam risk</span>
+                    </div>
+                  </div>
+
+                  <div className="risk-legend">
+                    <div>
+                      <span className="risk-dot risk-dot-danger"></span>
+                      <p>Kritik stok</p>
+                      <strong>{criticalStockCount}</strong>
+                    </div>
+
+                    <div>
+                      <span className="risk-dot risk-dot-warning"></span>
+                      <p>Sıfır stok</p>
+                      <strong>{zeroStockCount}</strong>
+                    </div>
+
+                    <div>
+                      <span className="risk-dot risk-dot-overstock"></span>
+                      <p>Fazla stok</p>
+                      <strong>{overStockCount ?? 0}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="insight-card">
+              <div className="risk-section-heading">
+                <div>
+                  <h2>🚨 Öncelikli Riskler</h2>
+                  <p>İlk aksiyon alınması gereken ürünler</p>
+                </div>
+                <span className="risk-live-badge">Canlı risk listesi</span>
+              </div>
+
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Ürün</th>
+                      <th>Risk Türü</th>
+                      <th>Stok</th>
+                      <th>Satış</th>
+                      <th>Seviye</th>
+                      <th>Önerilen Aksiyon</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {riskProducts.length > 0 ? (
+                      riskProducts.map((product) => (
+                        <tr key={`${product.name}-${product.category}`}>
+                          <td>{product.name}</td>
+                          <td>{product.category}</td>
+                          <td>{product.stock}</td>
+                          <td>{product.sales}</td>
+                          <td>
+                            <span
+                              className={`risk-level risk-level-${product.level
+                                .toLowerCase()
+                                .replace("ü", "u")
+                                .replace("ı", "i")}`}
+                            >
+                              {product.level}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="risk-action-pill">
+                              {product.action}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={6}>
+                          Analiz sonrası gerçek riskli ürünler burada görünecek.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="risk-insight-grid">
+              <div className="insight-card risk-loss-card">
+                <h2>💰 Kayıp Kâr Analizi</h2>
+                <p>Stok kaynaklı tahmini finansal etki</p>
+
+                <div className="risk-loss-value">
+                  {metrics?.estimated_lost_profit
+                    ? `${metrics.estimated_lost_profit.toLocaleString(
+                        "tr-TR"
+                      )} ₺`
+                    : "-"}
+                </div>
+
+                <div className="analysis-summary">
+                  <p>
+                    Kritik stok: <strong>{criticalStockCount} ürün</strong>
+                  </p>
+                  <p>
+                    Sıfır stok: <strong>{zeroStockCount} ürün</strong>
+                  </p>
+                  <p>
+                    Fazla stok: <strong>{overStockCount ?? 0} ürün</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="insight-card risk-ai-card">
+                <h2>🤖 AYÇA Risk Analizi</h2>
+
+                <div className="analysis-summary">
+                  <p>
+                    Eczanenizde şu anda{" "}
+                    <strong>{criticalStockCount} kritik stoklu</strong> ve{" "}
+                    <strong>{zeroStockCount} sıfır stoklu</strong> ürün
+                    bulunuyor.
+                  </p>
+
+                  <p>
+                    {criticalStockCount > 0 || zeroStockCount > 0
+                      ? "Kayıp satış riskini azaltmak için kritik ürünlere öncelikli sipariş verilmelidir."
+                      : "Kritik stok kaynaklı belirgin bir satış riski görünmüyor."}
+                  </p>
+
+                  <p>
+                    {(overStockCount ?? 0) > 0
+                      ? `${overStockCount} ürün fazla stok nedeniyle sermaye bağlıyor. Bu ürünlerin yeni siparişleri geçici olarak durdurulmalıdır.`
+                      : "Fazla stok kaynaklı önemli bir sermaye riski görünmüyor."}
+                  </p>
+
+                  <p>
+                    Genel risk sağlık skoru{" "}
+                    <strong>{riskHealthScore}/100</strong>. Öncelikli
+                    aksiyonların uygulanması stok dengesini ve nakit akışını
+                    iyileştirecektir.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="risk-action-grid">
+              <div className="risk-action-card risk-action-danger">
+                <span>01</span>
+                <strong>Kritik stokları tamamla</strong>
+                <p>
+                  {criticalStockCount + zeroStockCount} ürün için acil sipariş
+                  planı oluştur.
+                </p>
+              </div>
+
+              <div className="risk-action-card risk-action-warning">
+                <span>02</span>
+                <strong>Fazla stoğu erit</strong>
+                <p>
+                  {overStockCount ?? 0} ürünün siparişini durdur ve satışını
+                  hızlandır.
+                </p>
+              </div>
+
+              <div className="risk-action-card risk-action-success">
+                <span>03</span>
+                <strong>Kayıp kârı azalt</strong>
+                <p>
+                  Hızlı satan kritik ürünleri günlük olarak takip listesine al.
+                </p>
+              </div>
+            </section>
+          </>
+        )}
+
         {activeModule !== "🏠 Dashboard" &&
           activeModule !== "☀️ Sabah Brifingi" &&
           activeModule !== "📦 Operasyon Merkezi" &&
-          activeModule !== "💰 Finans Merkezi" && (
+          activeModule !== "💰 Finans Merkezi" &&
+          activeModule !== "🚨 Risk Merkezi" && (
           <section className="insight-card module-placeholder">
             <h2>{activeModule}</h2>
             <p>
