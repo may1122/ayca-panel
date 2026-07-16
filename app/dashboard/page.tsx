@@ -253,8 +253,52 @@ export default function DashboardPage() {
 
   const morningBriefing = analyzeResult?.morning_briefing ?? null;
 
+  const financeDailyRevenue = [
+    { day: "Pzt", value: 820000 },
+    { day: "Sal", value: 1040000 },
+    { day: "Çar", value: 930000 },
+    { day: "Per", value: 1180000 },
+    { day: "Cum", value: 1260000 },
+    { day: "Cmt", value: 1100000 },
+    { day: "Paz", value: 785000 },
+  ];
+
+  const financeTopProducts = [
+    { name: "Dolorex 50 mg", sales: 350, profit: 95000 },
+    { name: "Arveles 25 mg", sales: 280, profit: 81000 },
+    { name: "Vermidon 500 mg", sales: 240, profit: 74000 },
+    { name: "Pankreoflat", sales: 185, profit: 58000 },
+    { name: "Parol 500 mg", sales: 170, profit: 51000 },
+  ];
+
+  const financeCapitalProducts = [
+    { name: "Yavaş Hareket Eden Ürün A", stock: 145, value: 43000 },
+    { name: "Yavaş Hareket Eden Ürün B", stock: 121, value: 38000 },
+    { name: "Yavaş Hareket Eden Ürün C", stock: 96, value: 31000 },
+    { name: "Yavaş Hareket Eden Ürün D", stock: 82, value: 26000 },
+    { name: "Yavaş Hareket Eden Ürün E", stock: 74, value: 22000 },
+  ];
+
   const overStockCount =
     analyzeResult?.risk_metrics?.over_stock_count ?? null;
+
+  const financeHealthScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        100 -
+          (metrics?.risk_score ?? 0) * 5 -
+          (metrics?.critical_stock_count ?? 0) * 2 -
+          (overStockCount ?? 0)
+      )
+    )
+  );
+
+  const maximumFinanceRevenue = Math.max(
+    ...financeDailyRevenue.map((item) => item.value),
+    1
+  );
 
   const healthScore = Math.max(
     0,
@@ -337,6 +381,8 @@ export default function DashboardPage() {
               ? "Günün başlangıcında eczanenizin hızlı karar özetini görün."
               : activeModule === "📦 Operasyon Merkezi"
               ? "Stok durumunu ve sipariş önerilerini tek ekranda inceleyin."
+              : activeModule === "💰 Finans Merkezi"
+              ? "Ciro, işlem hacmi, ortalama sepet ve finansal performansı tek ekranda inceleyin."
               : "Bu modül Sprint 3 içinde adım adım aktif hale getirilecek."}
           </p>
         </section>
@@ -751,7 +797,285 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {activeModule !== "🏠 Dashboard" && activeModule !== "☀️ Sabah Brifingi" && activeModule !== "📦 Operasyon Merkezi" && (
+        {activeModule === "💰 Finans Merkezi" && (
+          <>
+            <section className="insight-kpi-grid">
+              <div className="insight-kpi finance-kpi">
+                <span>💰 Toplam Ciro</span>
+                <strong>
+                  {morningBriefing
+                    ? `${morningBriefing.summary.total_turnover.toLocaleString(
+                        "tr-TR"
+                      )} ₺`
+                    : "-"}
+                </strong>
+                <p>Analiz dönemindeki toplam satış</p>
+              </div>
+
+              <div className="insight-kpi finance-kpi">
+                <span>🧾 İşlem Sayısı</span>
+                <strong>
+                  {morningBriefing
+                    ? morningBriefing.summary.transaction_count.toLocaleString(
+                        "tr-TR"
+                      )
+                    : "-"}
+                </strong>
+                <p>Toplam satış işlemi</p>
+              </div>
+
+              <div className="insight-kpi finance-kpi">
+                <span>🛒 Ortalama Sepet</span>
+                <strong>
+                  {morningBriefing
+                    ? `${morningBriefing.summary.average_sale.toLocaleString(
+                        "tr-TR"
+                      )} ₺`
+                    : "-"}
+                </strong>
+                <p>İşlem başına ortalama satış</p>
+              </div>
+
+              <div className="insight-kpi finance-kpi">
+                <span>📈 Sipariş Bütçesi</span>
+                <strong>
+                  {estimatedOrderAmount
+                    ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
+                    : "-"}
+                </strong>
+                <p>Önerilen sipariş sermayesi</p>
+              </div>
+            </section>
+
+            <section className="insight-main-grid">
+              <div className="insight-card">
+                <h2>💚 Finansal Sağlık</h2>
+
+                <h1 className="finance-score">{financeHealthScore}/100</h1>
+
+                <progress
+                  value={financeHealthScore}
+                  max={100}
+                  className="finance-progress"
+                />
+
+                <p>
+                  {financeHealthScore >= 85
+                    ? "🟢 Güçlü finansal görünüm"
+                    : financeHealthScore >= 70
+                    ? "🟡 Takip edilmesi gereken finansal alanlar var"
+                    : "🔴 Finansal riskler için aksiyon gerekli"}
+                </p>
+              </div>
+
+              <div className="insight-card">
+                <h2>💸 Sermaye Durumu</h2>
+
+                <div className="analysis-summary">
+                  <p>
+                    Fazla stoklu ürün:{" "}
+                    <strong>{overStockCount ?? "-"}</strong>
+                  </p>
+
+                  <p>
+                    Kritik stoklu ürün:{" "}
+                    <strong>{metrics?.critical_stock_count ?? "-"}</strong>
+                  </p>
+
+                  <p>
+                    Tahmini kayıp kâr:{" "}
+                    <strong>
+                      {metrics?.estimated_lost_profit
+                        ? `${metrics.estimated_lost_profit.toLocaleString(
+                            "tr-TR"
+                          )} ₺`
+                        : "-"}
+                    </strong>
+                  </p>
+
+                  <p>
+                    Sipariş bütçesi:{" "}
+                    <strong>
+                      {estimatedOrderAmount
+                        ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
+                        : "-"}
+                    </strong>
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="insight-card">
+              <h2>📊 Günlük Ciro Dağılımı</h2>
+              <p>Haftanın günlerine göre satış performansı</p>
+
+              <div className="finance-chart">
+                {financeDailyRevenue.map((item) => {
+                  const height = Math.max(
+                    (item.value / maximumFinanceRevenue) * 100,
+                    8
+                  );
+
+                  return (
+                    <div className="finance-chart-item" key={item.day}>
+                      <span className="finance-chart-value">
+                        {Math.round(item.value / 1000)}K
+                      </span>
+
+                      <div className="finance-chart-track">
+                        <div
+                          className="finance-chart-bar"
+                          style={{ height: `${height}%` }}
+                        />
+                      </div>
+
+                      <strong>{item.day}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="insight-main-grid">
+              <div className="insight-card">
+                <h2>🏆 En Karlı Ürünler</h2>
+
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Ürün</th>
+                        <th>Satış</th>
+                        <th>Tahmini Kâr</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {financeTopProducts.map((product) => (
+                        <tr key={product.name}>
+                          <td>{product.name}</td>
+                          <td>{product.sales}</td>
+                          <td>
+                            {product.profit.toLocaleString("tr-TR")} ₺
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="insight-card">
+                <h2>💸 Sermaye Bağlayan Ürünler</h2>
+
+                <div className="table-wrapper">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Ürün</th>
+                        <th>Stok</th>
+                        <th>Stok Değeri</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {financeCapitalProducts.map((product) => (
+                        <tr key={product.name}>
+                          <td>{product.name}</td>
+                          <td>{product.stock}</td>
+                          <td>{product.value.toLocaleString("tr-TR")} ₺</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <section className="insight-card finance-ai-card">
+              <h2>🤖 AYÇA Finans Yorumu</h2>
+
+              {morningBriefing ? (
+                <div className="analysis-summary">
+                  <p>
+                    Son analiz döneminde eczanenizin toplam cirosu{" "}
+                    <strong>
+                      {morningBriefing.summary.total_turnover.toLocaleString(
+                        "tr-TR"
+                      )}{" "}
+                      ₺
+                    </strong>{" "}
+                    olarak gerçekleşti.
+                  </p>
+
+                  <p>
+                    Ortalama sepet tutarı{" "}
+                    <strong>
+                      {morningBriefing.summary.average_sale.toLocaleString(
+                        "tr-TR"
+                      )}{" "}
+                      ₺
+                    </strong>{" "}
+                    seviyesinde.
+                  </p>
+
+                  <p>
+                    Toplam{" "}
+                    <strong>
+                      {morningBriefing.summary.transaction_count.toLocaleString(
+                        "tr-TR"
+                      )}
+                    </strong>{" "}
+                    satış işlemi gerçekleşti.
+                  </p>
+
+                  <p>
+                    {overStockCount && overStockCount > 0
+                      ? `${overStockCount} ürün fazla stok nedeniyle sermaye bağlıyor. Bu ürünlerin sipariş önceliği düşürülmelidir.`
+                      : "Fazla stok kaynaklı ciddi bir sermaye riski görünmüyor."}
+                  </p>
+
+                  <p>
+                    Mevcut finansal sağlık skoru{" "}
+                    <strong>{financeHealthScore}/100</strong>. Sipariş
+                    bütçesinin kritik stoklara yönlendirilmesi finansal
+                    verimliliği artıracaktır.
+                  </p>
+                </div>
+              ) : (
+                <p>
+                  Analiz tamamlandığında AYÇA finans değerlendirmesi burada
+                  gösterilecek.
+                </p>
+              )}
+            </section>
+
+            <section className="finance-alert-grid">
+              <div className="finance-alert-card finance-alert-success">
+                <strong>🟢 Finansal Sağlık</strong>
+                <span>{financeHealthScore}/100</span>
+                <p>Genel finansal performans skoru</p>
+              </div>
+
+              <div className="finance-alert-card finance-alert-warning">
+                <strong>🟡 Fazla Stok</strong>
+                <span>{overStockCount ?? "-"}</span>
+                <p>Sermaye bağlama riski bulunan ürün</p>
+              </div>
+
+              <div className="finance-alert-card finance-alert-danger">
+                <strong>🔴 Kritik Stok</strong>
+                <span>{metrics?.critical_stock_count ?? "-"}</span>
+                <p>Kayıp satış riski bulunan ürün</p>
+              </div>
+            </section>
+          </>
+        )}
+
+        {activeModule !== "🏠 Dashboard" &&
+          activeModule !== "☀️ Sabah Brifingi" &&
+          activeModule !== "📦 Operasyon Merkezi" &&
+          activeModule !== "💰 Finans Merkezi" && (
           <section className="insight-card module-placeholder">
             <h2>{activeModule}</h2>
             <p>
