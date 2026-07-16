@@ -5,12 +5,13 @@ from app.services.excel_reader import (
     get_latest_file_upload,
     read_excel_dataframe_from_storage,
 )
-
 from app.services.analysis_engine import calculate_inventory_metrics
 from app.services.finance_engine import calculate_finance_metrics
 from app.services.order_engine import calculate_order_suggestions
 from app.services.risk_engine import calculate_risk_metrics
+from app.services.morning_briefing_engine import create_morning_briefing
 from app.services.dashboard_service import upsert_dashboard_metrics
+
 
 router = APIRouter(
     prefix="/analyze",
@@ -58,13 +59,26 @@ def run_analysis():
     company = companies.data[0]
     company_id = company["id"]
 
-    inventory = load_latest_dataframe(company_id, "inventory")
-    sales = load_latest_dataframe(company_id, "sales")
+    inventory = load_latest_dataframe(
+        company_id,
+        "inventory",
+    )
 
-    product_sales = load_latest_dataframe(company_id, "product_sales")
+    sales = load_latest_dataframe(
+        company_id,
+        "sales",
+    )
+
+    product_sales = load_latest_dataframe(
+        company_id,
+        "product_sales",
+    )
 
     if product_sales["df"] is None:
-        product_sales = load_latest_dataframe(company_id, "product")
+        product_sales = load_latest_dataframe(
+            company_id,
+            "product",
+        )
 
     inventory_df = inventory["df"]
     sales_df = sales["df"]
@@ -74,12 +88,17 @@ def run_analysis():
     finance_metrics = None
     order_suggestions = None
     risk_metrics = None
+    morning_briefing = None
 
     if inventory_df is not None:
-        inventory_metrics = calculate_inventory_metrics(inventory_df)
+        inventory_metrics = calculate_inventory_metrics(
+            inventory_df
+        )
 
     if sales_df is not None:
-        finance_metrics = calculate_finance_metrics(sales_df)
+        finance_metrics = calculate_finance_metrics(
+            sales_df
+        )
 
     if inventory_df is not None:
         order_suggestions = calculate_order_suggestions(
@@ -90,6 +109,13 @@ def run_analysis():
     risk_metrics = calculate_risk_metrics(
         inventory_df=inventory_df,
         product_df=product_df,
+    )
+
+    morning_briefing = create_morning_briefing(
+        inventory_metrics=inventory_metrics,
+        finance_metrics=finance_metrics,
+        order_suggestions=order_suggestions,
+        risk_metrics=risk_metrics,
     )
 
     dashboard_metrics = upsert_dashboard_metrics(
@@ -112,6 +138,7 @@ def run_analysis():
         "finance_metrics": finance_metrics,
         "order_suggestions": order_suggestions,
         "risk_metrics": risk_metrics,
+        "morning_briefing": morning_briefing,
         "dashboard_metrics": dashboard_metrics,
     }
 
