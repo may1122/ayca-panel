@@ -9,6 +9,7 @@ from app.services.order_engine import calculate_order_suggestions
 from app.services.risk_engine import calculate_risk_metrics
 from app.services.morning_briefing_engine import create_morning_briefing
 from app.services.dashboard_service import upsert_dashboard_metrics
+from app.services.patient_engine import calculate_patient_metrics
 
 
 router = APIRouter(
@@ -43,7 +44,11 @@ def validate_company(company_id: str):
     return result.data[0]
 
 
-def validate_storage_path(company_id: str, storage_path: str, label: str):
+def validate_storage_path(
+    company_id: str,
+    storage_path: str,
+    label: str,
+):
     expected_prefix = f"{company_id}/"
 
     if not storage_path.startswith(expected_prefix):
@@ -53,9 +58,13 @@ def validate_storage_path(company_id: str, storage_path: str, label: str):
         )
 
 
-def load_dataframe(storage_path: str, label: str):
+def load_dataframe(
+    storage_path: str,
+    label: str,
+):
     try:
         return read_excel_dataframe_from_storage(storage_path)
+
     except Exception as exc:
         raise HTTPException(
             status_code=400,
@@ -64,18 +73,22 @@ def load_dataframe(storage_path: str, label: str):
 
 
 def run_analysis(payload: AnalyzeRequest):
-    company = validate_company(payload.company_id)
+    company = validate_company(
+        payload.company_id
+    )
 
     validate_storage_path(
         payload.company_id,
         payload.inventory_path,
         "Envanter",
     )
+
     validate_storage_path(
         payload.company_id,
         payload.sales_path,
         "Satış",
     )
+
     validate_storage_path(
         payload.company_id,
         payload.product_path,
@@ -86,10 +99,12 @@ def run_analysis(payload: AnalyzeRequest):
         payload.inventory_path,
         "Envanter",
     )
+
     sales_df = load_dataframe(
         payload.sales_path,
         "Satış",
     )
+
     product_df = load_dataframe(
         payload.product_path,
         "Ürün satış",
@@ -111,6 +126,11 @@ def run_analysis(payload: AnalyzeRequest):
 
     risk_metrics = calculate_risk_metrics(
         inventory_df=inventory_df,
+        product_df=product_df,
+    )
+
+    patient_metrics = calculate_patient_metrics(
+        sales_df=sales_df,
         product_df=product_df,
     )
 
@@ -147,6 +167,7 @@ def run_analysis(payload: AnalyzeRequest):
         "finance_metrics": finance_metrics,
         "order_suggestions": order_suggestions,
         "risk_metrics": risk_metrics,
+        "patient_metrics": patient_metrics,
         "morning_briefing": morning_briefing,
         "dashboard_metrics": dashboard_metrics,
     }
@@ -166,7 +187,10 @@ def analyze_post_no_slash(payload: AnalyzeRequest):
 def analyze_get():
     return {
         "success": True,
-        "message": "Analiz için POST isteği ve üç dosya yolu gönderilmelidir.",
+        "message": (
+            "Analiz için POST isteği ve üç dosya yolu "
+            "gönderilmelidir."
+        ),
     }
 
 
@@ -174,5 +198,8 @@ def analyze_get():
 def analyze_get_no_slash():
     return {
         "success": True,
-        "message": "Analiz için POST isteği ve üç dosya yolu gönderilmelidir.",
+        "message": (
+            "Analiz için POST isteği ve üç dosya yolu "
+            "gönderilmelidir."
+        ),
     }
