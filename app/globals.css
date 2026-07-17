@@ -3163,3 +3163,365 @@ select:hover {
     transform: scale(1);
   }
 }
+
+/* =========================================================
+   SPRINT 4.1 — ANIMATION FOUNDATION + ANALYSIS LOADER
+   Bu blok mevcut globals.css dosyasının EN ALTINA eklenmelidir.
+   ========================================================= */
+
+.ayca-animated-page {
+  animation: ayca-page-enter 420ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.ayca-module-heading-enter {
+  animation: ayca-heading-enter 360ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.ayca-animated-section,
+.ayca-animated-card,
+.ayca-animated-table {
+  opacity: 0;
+  animation: ayca-card-enter 480ms cubic-bezier(.22, 1, .36, 1) forwards;
+}
+
+.ayca-animated-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.ayca-animated-page .insight-card,
+.ayca-animated-page .insight-kpi,
+.ayca-animated-page .dashboard-hero,
+.ayca-animated-page .briefing-hero,
+.ayca-animated-page .copilot-hero {
+  animation: ayca-card-enter 460ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.ayca-animated-page .insight-card:nth-of-type(2),
+.ayca-animated-page .insight-kpi:nth-child(2) { animation-delay: 45ms; }
+.ayca-animated-page .insight-card:nth-of-type(3),
+.ayca-animated-page .insight-kpi:nth-child(3) { animation-delay: 90ms; }
+.ayca-animated-page .insight-card:nth-of-type(4),
+.ayca-animated-page .insight-kpi:nth-child(4) { animation-delay: 135ms; }
+.ayca-animated-page .insight-card:nth-of-type(5),
+.ayca-animated-page .insight-kpi:nth-child(5) { animation-delay: 180ms; }
+
+.insight-card,
+.insight-kpi,
+.analysis-btn,
+.module-tabs button,
+.insight-sidebar nav button {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.analysis-btn:active,
+.module-tabs button:active,
+.insight-sidebar nav button:active {
+  transform: translateY(1px) scale(.985);
+}
+
+.copilot-message {
+  animation: ayca-message-enter 300ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.ayca-analysis-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(45, 212, 191, .14), transparent 34%),
+    radial-gradient(circle at 82% 88%, rgba(124, 58, 237, .12), transparent 34%),
+    rgba(8, 15, 30, .72);
+  backdrop-filter: blur(15px);
+  animation: ayca-overlay-enter 220ms ease both;
+}
+
+.ayca-analysis-panel {
+  width: min(620px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border: 1px solid rgba(255,255,255,.72);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(20,184,166,.11), transparent 32%),
+    linear-gradient(145deg, rgba(255,255,255,.98), rgba(248,250,252,.96));
+  padding: 34px;
+  box-shadow: 0 32px 100px rgba(2, 6, 23, .34);
+  text-align: center;
+  animation: ayca-panel-enter 420ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+.ayca-analysis-orbit {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 20px;
+}
+
+.orbit-core {
+  position: absolute;
+  inset: 26px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  border-radius: 28px;
+  background: linear-gradient(135deg, #0f766e, #14b8a6 58%, #7c3aed);
+  color: #fff;
+  font-size: 30px;
+  font-weight: 950;
+  box-shadow: 0 14px 35px rgba(15,118,110,.3);
+  animation: ayca-core-pulse 1.8s ease-in-out infinite;
+}
+
+.orbit-ring {
+  position: absolute;
+  border: 1px solid rgba(20,184,166,.28);
+  border-radius: 50%;
+}
+
+.orbit-ring-one { inset: 8px; animation: ayca-orbit-spin 4.4s linear infinite; }
+.orbit-ring-two { inset: 0; border-style: dashed; border-color: rgba(124,58,237,.24); animation: ayca-orbit-spin 6.8s linear infinite reverse; }
+
+.orbit-dot {
+  position: absolute;
+  z-index: 4;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #14b8a6;
+  box-shadow: 0 0 0 5px rgba(20,184,166,.12);
+}
+
+.orbit-dot-one { top: 8px; left: 51px; animation: ayca-dot-float 1.5s ease-in-out infinite; }
+.orbit-dot-two { right: 8px; bottom: 25px; background:#7c3aed; box-shadow:0 0 0 5px rgba(124,58,237,.1); animation: ayca-dot-float 1.8s .25s ease-in-out infinite; }
+.orbit-dot-three { left: 5px; bottom: 30px; width:7px; height:7px; animation: ayca-dot-float 1.65s .5s ease-in-out infinite; }
+
+.ayca-analysis-kicker {
+  display: block;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .14em;
+}
+
+.ayca-analysis-panel h2 {
+  margin: 9px 0 8px;
+  color: #0f172a;
+  font-size: clamp(24px, 4vw, 34px);
+}
+
+.ayca-analysis-panel > p {
+  max-width: 480px;
+  margin: 0 auto 24px;
+  color: #64748b;
+  line-height: 1.65;
+}
+
+.ayca-analysis-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ayca-analysis-progress-head strong { color: #0f766e; font-size: 15px; }
+
+.ayca-analysis-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.ayca-analysis-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #14b8a6 55%, #7c3aed);
+  box-shadow: 0 0 18px rgba(20,184,166,.34);
+  transition: width 420ms cubic-bezier(.22,1,.36,1);
+  position: relative;
+}
+
+.ayca-analysis-progress i::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+  transform: translateX(-100%);
+  animation: ayca-progress-shine 1.5s ease-in-out infinite;
+}
+
+.ayca-analysis-steps {
+  display: grid;
+  gap: 8px;
+  margin: 24px 0 18px;
+  text-align: left;
+}
+
+.ayca-analysis-steps > div {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 13px;
+  background: rgba(255,255,255,.7);
+  padding: 10px 12px;
+  color: #94a3b8;
+  transition: all 240ms ease;
+}
+
+.ayca-analysis-steps > div span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 8px;
+  background: #f1f5f9;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.ayca-analysis-steps > div p { margin: 0; font-size: 12px; font-weight: 750; }
+.ayca-analysis-steps > div.active { border-color: rgba(20,184,166,.45); background:#f0fdfa; color:#0f766e; transform:translateX(3px); }
+.ayca-analysis-steps > div.active span { background:#ccfbf1; animation:ayca-active-dot 1s ease-in-out infinite; }
+.ayca-analysis-steps > div.done { border-color:#d1fae5; background:#f0fdf4; color:#15803d; }
+.ayca-analysis-steps > div.done span { background:#dcfce7; }
+
+.ayca-analysis-tip {
+  border: 1px solid #ddd6fe;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #faf5ff, #f8fafc);
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.ayca-analysis-tip span { display:block; margin-bottom:5px; color:#6d28d9; font-size:11px; font-weight:900; }
+.ayca-analysis-tip p { margin:0; color:#64748b; font-size:12px; line-height:1.55; }
+
+@keyframes ayca-page-enter { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+@keyframes ayca-heading-enter { from { opacity:0; transform:translateX(-8px); } to { opacity:1; transform:none; } }
+@keyframes ayca-card-enter { from { opacity:0; transform:translateY(12px) scale(.992); } to { opacity:1; transform:none; } }
+@keyframes ayca-message-enter { from { opacity:0; transform:translateY(8px) scale(.985); } to { opacity:1; transform:none; } }
+@keyframes ayca-overlay-enter { from { opacity:0; } to { opacity:1; } }
+@keyframes ayca-panel-enter { from { opacity:0; transform:translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
+@keyframes ayca-core-pulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.055); } }
+@keyframes ayca-orbit-spin { to { transform:rotate(360deg); } }
+@keyframes ayca-dot-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-6px); } }
+@keyframes ayca-progress-shine { 55%,100% { transform:translateX(100%); } }
+@keyframes ayca-active-dot { 0%,100% { transform:scale(1); } 50% { transform:scale(.78); opacity:.55; } }
+
+@media (max-width: 640px) {
+  .ayca-analysis-overlay { padding: 12px; }
+  .ayca-analysis-panel { padding: 24px 18px; border-radius: 24px; }
+  .ayca-analysis-orbit { transform: scale(.88); margin-bottom: 12px; }
+  .ayca-analysis-steps > div { padding: 9px 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ayca-animated-page,
+  .ayca-module-heading-enter,
+  .ayca-animated-section,
+  .ayca-animated-card,
+  .ayca-animated-table,
+  .ayca-animated-page .insight-card,
+  .ayca-animated-page .insight-kpi,
+  .ayca-animated-page .dashboard-hero,
+  .ayca-animated-page .briefing-hero,
+  .ayca-animated-page .copilot-hero,
+  .copilot-message,
+  .ayca-analysis-overlay,
+  .ayca-analysis-panel,
+  .orbit-core,
+  .orbit-ring,
+  .orbit-dot,
+  .ayca-analysis-progress i::after,
+  .ayca-analysis-steps > div.active span {
+    animation: none !important;
+  }
+
+  .ayca-analysis-progress i,
+  .insight-card,
+  .insight-kpi,
+  .analysis-btn,
+  .module-tabs button,
+  .insight-sidebar nav button {
+    transition: none !important;
+  }
+}
+
+/* =========================================================
+   SPRINT 4.2 — RECHARTS GERÇEK GRAFİK MOTORU
+   ========================================================= */
+.ayca-chart-shell{position:relative;width:100%;min-width:0;border:1px solid #e2e8f0;border-radius:20px;background:linear-gradient(180deg,#ffffff,#f8fafc);padding:10px;overflow:hidden}
+.ayca-chart-large{height:330px;margin-top:18px}
+.ayca-donut-chart{width:220px;height:220px;padding:0;border:0;background:transparent;overflow:visible}
+.ayca-donut-center{position:absolute;inset:0;display:grid;place-content:center;text-align:center;pointer-events:none}
+.ayca-donut-center strong{color:#0f172a;font-size:42px;line-height:1;font-weight:950}
+.ayca-donut-center span{margin-top:5px;color:#64748b;font-size:12px;font-weight:850}
+.recharts-default-tooltip{font-family:inherit!important}
+.recharts-tooltip-label{color:#0f172a!important;font-weight:900!important;margin-bottom:6px!important}
+.recharts-legend-item-text{color:#475569!important;font-weight:800!important}
+.recharts-sector,.recharts-area-area,.recharts-area-curve,.recharts-bar-rectangle{transition:filter .2s ease,opacity .2s ease}
+.recharts-sector:hover,.recharts-bar-rectangle:hover{filter:brightness(1.05);opacity:.9}
+@media(max-width:760px){.ayca-chart-large{height:280px}.ayca-donut-chart{width:200px;height:200px}}
+
+/* =========================================================
+   SPRINT 4B — MODÜLLER ARASI AKILLI GEÇİŞLER
+   ========================================================= */
+
+.dashboard-navigation-card {
+  position: relative;
+  width: 100%;
+  border: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.dashboard-navigation-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.12);
+}
+
+.dashboard-navigation-card:focus-visible,
+.dashboard-navigation-row:focus-visible {
+  outline: 3px solid rgba(124, 58, 237, 0.28);
+  outline-offset: 3px;
+}
+
+.navigation-hint {
+  display: block;
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.dashboard-navigation-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard-navigation-row:hover {
+  background: rgba(124, 58, 237, 0.05);
+}
