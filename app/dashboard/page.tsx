@@ -42,10 +42,40 @@ type OrderSuggestion = {
   "Ürün Adı": string;
   Stok: number;
   "Satılan Adet": number;
+  "Günlük Tüketim"?: number;
+  "Stok Gün Karşılığı"?: number | null;
   "Hedef Stok": number;
   "Önerilen Sipariş": number;
   "Tahmini Sipariş Tutarı": number;
   Öncelik: string;
+};
+
+type StockRunoutProduct = {
+  product_name: string;
+  stock: number;
+  sold_quantity: number;
+  daily_consumption: number;
+  estimated_runout_days: number;
+  status: string;
+};
+
+type DeadStockProduct = {
+  product_name: string;
+  stock: number;
+  stock_value: number;
+  sold_quantity: number;
+  recommended_action: string;
+};
+
+type ExpiryProduct = {
+  product_name: string;
+  expiry_date: string;
+  days_left: number;
+  stock: number;
+  stock_value: number;
+  status: string;
+  supplier: string;
+  shelf: string;
 };
 
 type MorningBriefing = {
@@ -167,9 +197,28 @@ type AnalyzeResult = {
     over_stock_count?: number;
     zero_stock_count?: number;
     critical_stock_count?: number;
+    warning_stock_count?: number;
+    dead_stock_count?: number;
+    dead_stock_value?: number;
     risk_score?: number;
     risk_products?: RiskProduct[];
     capital_products?: CapitalProduct[];
+    stock_runout_products?: StockRunoutProduct[];
+    dead_stock_products?: DeadStockProduct[];
+  };
+  expiry_metrics?: {
+    success?: boolean;
+    error?: string;
+    warning_count?: number;
+    expired_count?: number;
+    risk_stock_value?: number;
+    nearest_expiry_days?: number | null;
+    products?: ExpiryProduct[];
+  };
+  files?: {
+    inventory?: { storage_path?: string };
+    sales?: { storage_path?: string };
+    product_sales?: { storage_path?: string };
   };
   morning_briefing?: MorningBriefing | null;
   patient_metrics?: {
@@ -185,8 +234,11 @@ type AnalyzeResult = {
   } | null;
 };
 
-const API_URL =
-  "https://congenial-trout-g7965j94493jwg-8000.app.github.dev/analyze/";
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
+).replace(/\/$/, "");
+const API_URL = `${API_BASE_URL}/analyze/`;
+const REPORT_URL = `${API_BASE_URL}/analyze/report`;
 
 const modules = [
   "🏠 Dashboard",
@@ -194,6 +246,9 @@ const modules = [
   "📦 Operasyon Merkezi",
   "💰 Finans Merkezi",
   "🚨 Risk Merkezi",
+  "⏱️ Stok Bitiş Tahmini",
+  "⏳ Miad Takibi",
+  "💀 Ölü Stok Analizi",
   "👥 Hasta & Reçete Merkezi",
   "🤖 AYÇA Copilot",
   "📊 Raporlar",
@@ -311,15 +366,9 @@ export default function DashboardPage() {
 
         setCompany(companyData);
 
-        const { data: metricsData } = await supabase
-          .from("dashboard_metrics")
-          .select("*")
-          .eq("company_id", profile.company_id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
-
-        setMetrics(metricsData);
+        // Yeni oturum eski analiz sonucunu otomatik göstermez.
+        setMetrics(null);
+        setAnalyzeResult(null);
       }
     }
 
@@ -475,6 +524,49 @@ export default function DashboardPage() {
     }
   }
 
+  async function downloadAnalysisReport() {
+    const files = analyzeResult?.files;
+    const inventoryPath = files?.inventory?.storage_path;
+    const salesPath = files?.sales?.storage_path;
+    const productPath = files?.product_sales?.storage_path;
+
+    if (!companyId || !inventoryPath || !salesPath || !productPath) {
+      alert("Rapor için önce başarılı bir analiz yapınız.");
+      return;
+    }
+
+    try {
+      const response = await fetch(REPORT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId,
+          inventory_path: inventoryPath,
+          sales_path: salesPath,
+          product_path: productPath,
+        }),
+      });
+
+      if (!response.ok) {
+        alert("Excel raporu oluşturulamadı.");
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `AYCA_Insight_Rapor_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Report error:", error);
+      alert("Excel raporu indirilirken hata oluştu.");
+    }
+  }
+
   async function logout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -488,8 +580,11 @@ export default function DashboardPage() {
     });
   }
 
-  const estimatedOrderAmount =
-    metrics?.estimated_order_budget ?? metrics?.estimated_order_amount;
+  const hasAnalysis = analyzeResult !== null;
+
+  const estimatedOrderAmount = hasAnalysis
+    ? metrics?.estimated_order_budget ?? metrics?.estimated_order_amount
+    : null;
 
   const orderSuggestions =
     analyzeResult?.order_suggestions?.top_suggestions ?? [];
@@ -536,6 +631,12 @@ export default function DashboardPage() {
   );
 
   const overStockCount = analyzeResult?.risk_metrics?.over_stock_count ?? null;
+  const stockRunoutProducts = analyzeResult?.risk_metrics?.stock_runout_products ?? [];
+  const deadStockProducts = analyzeResult?.risk_metrics?.dead_stock_products ?? [];
+  const deadStockCount = analyzeResult?.risk_metrics?.dead_stock_count ?? 0;
+  const deadStockValue = analyzeResult?.risk_metrics?.dead_stock_value ?? 0;
+  const expiryMetrics = analyzeResult?.expiry_metrics ?? null;
+  const expiryProducts = expiryMetrics?.products ?? [];
 
   const financeHealthScore = Math.max(
     0,
@@ -866,15 +967,32 @@ export default function DashboardPage() {
                     ? "Ciro, işlem hacmi, ortalama sepet ve finansal performansı tek ekranda inceleyin."
                     : activeModule === "🚨 Risk Merkezi"
                       ? "Kritik stok, sıfır stok, fazla stok ve kayıp kâr risklerini tek ekranda yönetin."
-                      : activeModule === "👥 Hasta & Reçete Merkezi"
-                        ? "Hasta sadakati, doktor katkısı, kurum performansı ve kontrollü reçete süreçlerini yönetin."
-                        : activeModule === "🤖 AYÇA Copilot"
-                          ? "Stok, finans, risk, doktor ve hasta verilerinizi tek bir yönetim danışmanıyla yorumlayın."
-                          : "Bu modül Sprint 3 içinde adım adım aktif hale getirilecek."}
+                      : activeModule === "⏱️ Stok Bitiş Tahmini"
+                        ? "Satış hızına göre mevcut stokların tahmini kaç gün yeteceğini ve yakın bitiş risklerini görün."
+                        : activeModule === "⏳ Miad Takibi"
+                          ? "Kaynak verideki miad/SKT bilgilerine göre yaklaşan ve geçmiş son kullanma tarihlerini takip edin."
+                          : activeModule === "💀 Ölü Stok Analizi"
+                            ? "Hareketsiz veya düşük hareketli stoklarda bağlı sermayeyi ve önerilen aksiyonları inceleyin."
+                            : activeModule === "👥 Hasta & Reçete Merkezi"
+                              ? "Hasta sadakati, doktor katkısı, kurum performansı ve kontrollü reçete süreçlerini yönetin."
+                              : activeModule === "🤖 AYÇA Copilot"
+                                ? "Stok, finans, risk, doktor ve hasta verilerinizi tek bir yönetim danışmanıyla yorumlayın."
+                                : activeModule === "📊 Raporlar"
+                                  ? "Analiz sonuçlarını özetleyin ve Excel raporunu indirerek detaylı çıktıları dışa aktarın."
+                                  : "AYÇA Insight analiz modülü."}
           </p>
         </section>
 
         <AnimatedPage animationKey={activeModule}>
+        {!hasAnalysis && activeModule !== "🏠 Dashboard" && (
+          <section className="insight-card">
+            <h2>Analiz bekleniyor</h2>
+            <p>
+              Bu modülde veri göstermek için Dashboard üzerinden Envanter,
+              Satış ve Ürün Satış dosyalarını yükleyip analizi başlatın.
+            </p>
+          </section>
+        )}
         {activeModule === "🏠 Dashboard" && (
           <>
             <section className="dashboard-hero">
@@ -899,8 +1017,14 @@ export default function DashboardPage() {
                 aria-label="Sabah Brifingi modülünü aç"
               >
                 <span>Eczane Sağlık Skoru</span>
-                <strong>{morningBriefing?.score ?? healthScore}</strong>
-                <small>/100 · {morningBriefing?.status ?? healthStatus}</small>
+                <strong>
+                  {hasAnalysis ? (morningBriefing?.score ?? healthScore) : "-"}
+                </strong>
+                <small>
+                  {hasAnalysis
+                    ? `/100 · ${morningBriefing?.status ?? healthStatus}`
+                    : "Analiz bekleniyor"}
+                </small>
                 <div className="score-track">
                   <i
                     style={{
@@ -920,7 +1044,7 @@ export default function DashboardPage() {
               >
                 <b>⚠️</b>
                 <span>Risk Skoru</span>
-                <strong>{metrics?.risk_score ?? "-"}</strong>
+                <strong>{hasAnalysis ? (metrics?.risk_score ?? "-") : "-"}</strong>
                 <p>Genel operasyon riski</p>
                 <em className="navigation-hint">Riskleri incele →</em>
               </button>
@@ -931,7 +1055,7 @@ export default function DashboardPage() {
               >
                 <b>📦</b>
                 <span>Kritik Stok</span>
-                <strong>{metrics?.critical_stock_count ?? "-"}</strong>
+                <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
                 <p>Acil kontrol gerektiren ürün</p>
                 <em className="navigation-hint">Ürünleri aç →</em>
               </button>
@@ -973,9 +1097,9 @@ export default function DashboardPage() {
                 <b>🤖</b>
                 <span>AYÇA Önerileri</span>
                 <strong>
-                  {metrics?.ai_suggestion_count ??
-                    orderSuggestions.length ??
-                    "-"}
+                  {hasAnalysis
+                    ? metrics?.ai_suggestion_count ?? orderSuggestions.length ?? "-"
+                    : "-"}
                 </strong>
                 <p>Karar destek aksiyonu</p>
                 <em className="navigation-hint">Copilot'u aç →</em>
@@ -996,11 +1120,13 @@ export default function DashboardPage() {
                 <div className="priority-list">
                   {(morningBriefing?.top_actions?.length
                     ? morningBriefing.top_actions
-                    : [
-                        `${metrics?.critical_stock_count ?? 0} kritik stok ürününü kontrol et.`,
-                        `${overStockCount ?? 0} fazla stok ürününün siparişini gözden geçir.`,
-                        `${orderSuggestions.length} sipariş önerisini bütçeye göre sırala.`,
-                      ]
+                    : hasAnalysis
+                      ? [
+                          `${metrics?.critical_stock_count ?? 0} kritik stok ürününü kontrol et.`,
+                          `${overStockCount ?? 0} fazla stok ürününün siparişini gözden geçir.`,
+                          `${orderSuggestions.length} sipariş önerisini bütçeye göre sırala.`,
+                        ]
+                      : ["Analiz için üç Excel dosyasını yükleyip Analizi Başlat butonuna basın."]
                   )
                     .slice(0, 4)
                     .map((item, index) => (
@@ -1210,7 +1336,7 @@ export default function DashboardPage() {
             <section className="insight-kpi-grid">
               <div className="insight-kpi">
                 <span>Risk Skoru</span>
-                <strong>{metrics?.risk_score ?? "-"}</strong>
+                <strong>{hasAnalysis ? (metrics?.risk_score ?? "-") : "-"}</strong>
                 <p>
                   {metrics ? "Son analiz sonucu" : "Henüz analiz yapılmadı"}
                 </p>
@@ -1218,7 +1344,7 @@ export default function DashboardPage() {
 
               <div className="insight-kpi">
                 <span>Kritik Stok</span>
-                <strong>{metrics?.critical_stock_count ?? "-"}</strong>
+                <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
                 <p>
                   {metrics
                     ? "Kritik stoktaki ürün sayısı"
@@ -1254,7 +1380,7 @@ export default function DashboardPage() {
 
               <div className="insight-kpi">
                 <span>AI Öneri Sayısı</span>
-                <strong>{metrics?.ai_suggestion_count ?? "-"}</strong>
+                <strong>{hasAnalysis ? (metrics?.ai_suggestion_count ?? "-") : "-"}</strong>
                 <p>
                   {metrics ? "Üretilen öneri sayısı" : "Henüz analiz yapılmadı"}
                 </p>
@@ -1271,11 +1397,11 @@ export default function DashboardPage() {
                   color: "#0f766e",
                 }}
               >
-                {healthScore}/100
+                {hasAnalysis ? `${healthScore}/100` : "-"}
               </h1>
 
               <progress
-                value={healthScore}
+                value={hasAnalysis ? healthScore : 0}
                 max={100}
                 style={{
                   width: "100%",
@@ -1289,18 +1415,18 @@ export default function DashboardPage() {
                   Genel Durum : <strong>{healthStatus}</strong>
                 </p>
                 <p>
-                  Risk : <strong>{metrics?.risk_score ?? "-"}</strong>
+                  Risk : <strong>{hasAnalysis ? (metrics?.risk_score ?? "-") : "-"}</strong>
                 </p>
                 <p>
                   Kritik Stok :{" "}
-                  <strong>{metrics?.critical_stock_count ?? "-"}</strong>
+                  <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
                 </p>
                 <p>
                   Fazla Stok : <strong>{overStockCount ?? "-"}</strong>
                 </p>
                 <p>
                   AI Önerileri :{" "}
-                  <strong>{metrics?.ai_suggestion_count ?? "-"}</strong>
+                  <strong>{hasAnalysis ? (metrics?.ai_suggestion_count ?? "-") : "-"}</strong>
                 </p>
               </div>
             </section>
@@ -1463,7 +1589,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "☀️ Sabah Brifingi" && (
+        {hasAnalysis && activeModule === "☀️ Sabah Brifingi" && (
           <section className="insight-card">
             <h2>☀️ Sabah Brifingi</h2>
             <p>Bugünkü eczane durumunuzun hızlı ve aksiyon odaklı özeti.</p>
@@ -1836,7 +1962,7 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {activeModule === "📦 Operasyon Merkezi" && (
+        {hasAnalysis && activeModule === "📦 Operasyon Merkezi" && (
           <section className="insight-card">
             <p>Stok ve sipariş önerileriniz.</p>
 
@@ -1857,7 +1983,7 @@ export default function DashboardPage() {
 
               <div className="insight-kpi">
                 <span>Kritik Stok</span>
-                <strong>{metrics?.critical_stock_count ?? "-"}</strong>
+                <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
               </div>
 
               <div className="insight-kpi">
@@ -1890,10 +2016,181 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
+
+            <div className="table-wrapper" style={{ marginTop: 24 }}>
+              <h2>⏱️ Stok Bitiş Tahmini</h2>
+              <table>
+                <thead><tr><th>Ürün</th><th>Stok</th><th>Dönem Satışı</th><th>Günlük Tüketim</th><th>Tahmini Bitiş</th><th>Durum</th></tr></thead>
+                <tbody>
+                  {stockRunoutProducts.length > 0 ? stockRunoutProducts.map((item, index) => (
+                    <tr key={`${item.product_name}-${index}`}><td>{item.product_name}</td><td>{item.stock}</td><td>{item.sold_quantity}</td><td>{item.daily_consumption}</td><td>{item.estimated_runout_days} gün</td><td>{item.status}</td></tr>
+                  )) : <tr><td colSpan={6}>Analiz sonrası 30 gün içinde bitebilecek ürünler burada görünecek.</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </section>
         )}
 
-        {activeModule === "💰 Finans Merkezi" && (
+        {hasAnalysis && activeModule === "⏱️ Stok Bitiş Tahmini" && (
+          <>
+            <section className="insight-kpi-grid">
+              <div className="insight-kpi risk-kpi risk-kpi-danger">
+                <span>⏱️ 7 Gün İçinde Bitecek</span>
+                <strong>
+                  {
+                    stockRunoutProducts.filter(
+                      (item) => item.estimated_runout_days <= 7,
+                    ).length
+                  }
+                </strong>
+                <p>Acil stok aksiyonu gerektiren ürün</p>
+              </div>
+
+              <div className="insight-kpi risk-kpi risk-kpi-warning">
+                <span>📦 30 Gün İçinde Bitecek</span>
+                <strong>{stockRunoutProducts.length}</strong>
+                <p>Yakın dönemde stok riski taşıyan ürün</p>
+              </div>
+
+              <div className="insight-kpi">
+                <span>📉 En Yakın Bitiş</span>
+                <strong>
+                  {stockRunoutProducts.length > 0
+                    ? `${Math.min(
+                        ...stockRunoutProducts.map(
+                          (item) => item.estimated_runout_days,
+                        ),
+                      )} gün`
+                    : "-"}
+                </strong>
+                <p>Mevcut satış hızına göre tahmini süre</p>
+              </div>
+
+              <div className="insight-kpi">
+                <span>🧮 Hesaplama</span>
+                <strong>Stok / Günlük Tüketim</strong>
+                <p>Analiz dönemindeki satış hızına göre</p>
+              </div>
+            </section>
+
+            <section className="insight-card">
+              <h2>⏱️ Stok Bitiş Tahmini</h2>
+              <p>
+                Mevcut stok ve analiz dönemindeki günlük tüketim hızına göre
+                yakın dönemde bitebilecek ürünler.
+              </p>
+
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Durum</th>
+                      <th>Ürün</th>
+                      <th>Stok</th>
+                      <th>Dönem Satışı</th>
+                      <th>Günlük Tüketim</th>
+                      <th>Tahmini Bitiş</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {stockRunoutProducts.length > 0 ? (
+                      stockRunoutProducts.map((item, index) => (
+                        <tr key={`${item.product_name}-${index}`}>
+                          <td>{item.status}</td>
+                          <td>{item.product_name}</td>
+                          <td>{item.stock}</td>
+                          <td>{item.sold_quantity}</td>
+                          <td>{item.daily_consumption}</td>
+                          <td>{item.estimated_runout_days} gün</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={6}>
+                          Yakın dönemde bitecek ürün bulunamadı veya henüz
+                          analiz yapılmadı.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
+        )}
+
+        {hasAnalysis && activeModule === "⏳ Miad Takibi" && (
+          <>
+            <section className="insight-kpi-grid">
+              <div className="insight-kpi risk-kpi risk-kpi-warning">
+                <span>⏳ Miad Uyarısı</span>
+                <strong>{expiryMetrics?.warning_count ?? "-"}</strong>
+                <p>90 gün içinde miadı dolacak ürün</p>
+              </div>
+              <div className="insight-kpi risk-kpi risk-kpi-danger">
+                <span>🚫 Miadı Geçmiş</span>
+                <strong>{expiryMetrics?.expired_count ?? "-"}</strong>
+                <p>Kontrol edilmesi gereken ürün</p>
+              </div>
+              <div className="insight-kpi">
+                <span>💰 Riskli Stok Değeri</span>
+                <strong>{expiryMetrics?.risk_stock_value != null ? `${expiryMetrics.risk_stock_value.toLocaleString("tr-TR")} ₺` : "-"}</strong>
+                <p>Miad penceresindeki bağlı stok değeri</p>
+              </div>
+              <div className="insight-kpi">
+                <span>📅 En Yakın Miad</span>
+                <strong>{expiryMetrics?.nearest_expiry_days != null ? `${expiryMetrics.nearest_expiry_days} gün` : "-"}</strong>
+                <p>Geçmemiş en yakın son kullanma tarihi</p>
+              </div>
+            </section>
+            <section className="insight-card">
+              <h2>⏳ Miadı Yaklaşan Ürünler</h2>
+              {!expiryMetrics?.success && expiryMetrics?.error && <p>{expiryMetrics.error}</p>}
+              <div className="table-wrapper">
+                <table>
+                  <thead><tr><th>Durum</th><th>Ürün</th><th>Miad</th><th>Kalan Gün</th><th>Stok</th><th>Stok Değeri</th><th>Raf</th><th>Tedarikçi</th></tr></thead>
+                  <tbody>
+                    {expiryProducts.length > 0 ? expiryProducts.map((item, index) => (
+                      <tr key={`${item.product_name}-${index}`}>
+                        <td>{item.status}</td><td>{item.product_name}</td><td>{item.expiry_date}</td><td>{item.days_left}</td><td>{item.stock}</td><td>{item.stock_value.toLocaleString("tr-TR")} ₺</td><td>{item.shelf}</td><td>{item.supplier}</td>
+                      </tr>
+                    )) : <tr><td colSpan={8}>Miad verisi bulunamadı veya analiz yapılmadı.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
+        )}
+
+        {hasAnalysis && activeModule === "💀 Ölü Stok Analizi" && (
+          <>
+            <section className="insight-kpi-grid">
+              <div className="insight-kpi risk-kpi risk-kpi-overstock">
+                <span>💀 Ölü Stok</span><strong>{deadStockCount}</strong><p>Analiz döneminde hareket görmeyen ürün</p>
+              </div>
+              <div className="insight-kpi risk-kpi risk-kpi-loss">
+                <span>💸 Bağlı Sermaye</span><strong>{deadStockValue.toLocaleString("tr-TR")} ₺</strong><p>Hareketsiz stoktaki tahmini değer</p>
+              </div>
+            </section>
+            <section className="insight-card">
+              <h2>💀 Ölü / Hareketsiz Stok Listesi</h2>
+              <p>Stokta olup analiz döneminde satış hareketi görülmeyen ürünler.</p>
+              <div className="table-wrapper">
+                <table>
+                  <thead><tr><th>Ürün</th><th>Stok</th><th>Dönem Satışı</th><th>Stok Değeri</th><th>Önerilen Aksiyon</th></tr></thead>
+                  <tbody>
+                    {deadStockProducts.length > 0 ? deadStockProducts.map((item, index) => (
+                      <tr key={`${item.product_name}-${index}`}><td>{item.product_name}</td><td>{item.stock}</td><td>{item.sold_quantity}</td><td>{item.stock_value.toLocaleString("tr-TR")} ₺</td><td>{item.recommended_action}</td></tr>
+                    )) : <tr><td colSpan={5}>Ölü stok bulunamadı veya henüz analiz yapılmadı.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
+        )}
+
+        {hasAnalysis && activeModule === "💰 Finans Merkezi" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi finance-kpi">
@@ -1974,7 +2271,7 @@ export default function DashboardPage() {
 
                   <p>
                     Kritik stoklu ürün:{" "}
-                    <strong>{metrics?.critical_stock_count ?? "-"}</strong>
+                    <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
                   </p>
 
                   <p>
@@ -2217,14 +2514,14 @@ export default function DashboardPage() {
 
               <div className="finance-alert-card finance-alert-danger">
                 <strong>🔴 Kritik Stok</strong>
-                <span>{metrics?.critical_stock_count ?? "-"}</span>
+                <span>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</span>
                 <p>Kayıp satış riski bulunan ürün</p>
               </div>
             </section>
           </>
         )}
 
-        {activeModule === "🚨 Risk Merkezi" && (
+        {hasAnalysis && activeModule === "🚨 Risk Merkezi" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-score">
@@ -2501,7 +2798,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "👥 Hasta & Reçete Merkezi" && (
+        {hasAnalysis && activeModule === "👥 Hasta & Reçete Merkezi" && (
           <>
             <section className="patient-hero">
               <div>
@@ -2912,7 +3209,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "🤖 AYÇA Copilot" && (
+        {hasAnalysis && activeModule === "🤖 AYÇA Copilot" && (
           <>
             <section className="copilot-page-heading">
               <div>
@@ -3896,13 +4193,34 @@ export default function DashboardPage() {
         )}
 
 
+        {hasAnalysis && activeModule === "📊 Raporlar" && (
+          <section className="insight-card">
+            <h2>📊 AYÇA Insight Raporları</h2>
+            <p>Analiz sonuçlarını yönetici özeti, sipariş, risk, stok bitiş, ölü stok, miad ve finans sayfalarıyla Excel olarak indirin.</p>
+            <button className="primary-button" onClick={downloadAnalysisReport} disabled={!hasAnalysis}>
+              📥 Excel Analiz Raporunu İndir
+            </button>
+            <div className="analysis-summary" style={{ marginTop: 20 }}>
+              <p>Analiz durumu: <strong>{analyzeResult ? "Hazır" : "Önce analiz yapınız"}</strong></p>
+              <p>Sipariş önerisi: <strong>{orderSuggestions.length}</strong></p>
+              <p>Kritik stok: <strong>{criticalStockCount}</strong></p>
+              <p>Miad uyarısı: <strong>{expiryMetrics?.warning_count ?? 0}</strong></p>
+              <p>Ölü stok: <strong>{deadStockCount}</strong></p>
+            </div>
+          </section>
+        )}
+
         {activeModule !== "🏠 Dashboard" &&
           activeModule !== "☀️ Sabah Brifingi" &&
           activeModule !== "📦 Operasyon Merkezi" &&
           activeModule !== "💰 Finans Merkezi" &&
           activeModule !== "🚨 Risk Merkezi" &&
+          activeModule !== "⏱️ Stok Bitiş Tahmini" &&
+          activeModule !== "⏳ Miad Takibi" &&
+          activeModule !== "💀 Ölü Stok Analizi" &&
           activeModule !== "👥 Hasta & Reçete Merkezi" &&
-          activeModule !== "🤖 AYÇA Copilot" && (
+          activeModule !== "🤖 AYÇA Copilot" &&
+          activeModule !== "📊 Raporlar" && (
             <section className="insight-card module-placeholder">
               <h2>{activeModule}</h2>
               <p>
