@@ -366,9 +366,15 @@ export default function DashboardPage() {
 
         setCompany(companyData);
 
-        // Yeni oturum eski analiz sonucunu otomatik göstermez.
-        setMetrics(null);
-        setAnalyzeResult(null);
+        const { data: metricsData } = await supabase
+          .from("dashboard_metrics")
+          .select("*")
+          .eq("company_id", profile.company_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        setMetrics(metricsData);
       }
     }
 
@@ -580,11 +586,8 @@ export default function DashboardPage() {
     });
   }
 
-  const hasAnalysis = analyzeResult !== null;
-
-  const estimatedOrderAmount = hasAnalysis
-    ? metrics?.estimated_order_budget ?? metrics?.estimated_order_amount
-    : null;
+  const estimatedOrderAmount =
+    metrics?.estimated_order_budget ?? metrics?.estimated_order_amount;
 
   const orderSuggestions =
     analyzeResult?.order_suggestions?.top_suggestions ?? [];
@@ -984,15 +987,6 @@ export default function DashboardPage() {
         </section>
 
         <AnimatedPage animationKey={activeModule}>
-        {!hasAnalysis && activeModule !== "🏠 Dashboard" && (
-          <section className="insight-card">
-            <h2>Analiz bekleniyor</h2>
-            <p>
-              Bu modülde veri göstermek için Dashboard üzerinden Envanter,
-              Satış ve Ürün Satış dosyalarını yükleyip analizi başlatın.
-            </p>
-          </section>
-        )}
         {activeModule === "🏠 Dashboard" && (
           <>
             <section className="dashboard-hero">
@@ -1017,14 +1011,8 @@ export default function DashboardPage() {
                 aria-label="Sabah Brifingi modülünü aç"
               >
                 <span>Eczane Sağlık Skoru</span>
-                <strong>
-                  {hasAnalysis ? (morningBriefing?.score ?? healthScore) : "-"}
-                </strong>
-                <small>
-                  {hasAnalysis
-                    ? `/100 · ${morningBriefing?.status ?? healthStatus}`
-                    : "Analiz bekleniyor"}
-                </small>
+                <strong>{morningBriefing?.score ?? healthScore}</strong>
+                <small>/100 · {morningBriefing?.status ?? healthStatus}</small>
                 <div className="score-track">
                   <i
                     style={{
@@ -1044,7 +1032,7 @@ export default function DashboardPage() {
               >
                 <b>⚠️</b>
                 <span>Risk Skoru</span>
-                <strong>{hasAnalysis ? (metrics?.risk_score ?? "-") : "-"}</strong>
+                <strong>{metrics?.risk_score ?? "-"}</strong>
                 <p>Genel operasyon riski</p>
                 <em className="navigation-hint">Riskleri incele →</em>
               </button>
@@ -1055,7 +1043,7 @@ export default function DashboardPage() {
               >
                 <b>📦</b>
                 <span>Kritik Stok</span>
-                <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
+                <strong>{metrics?.critical_stock_count ?? "-"}</strong>
                 <p>Acil kontrol gerektiren ürün</p>
                 <em className="navigation-hint">Ürünleri aç →</em>
               </button>
@@ -1097,9 +1085,9 @@ export default function DashboardPage() {
                 <b>🤖</b>
                 <span>AYÇA Önerileri</span>
                 <strong>
-                  {hasAnalysis
-                    ? metrics?.ai_suggestion_count ?? orderSuggestions.length ?? "-"
-                    : "-"}
+                  {metrics?.ai_suggestion_count ??
+                    orderSuggestions.length ??
+                    "-"}
                 </strong>
                 <p>Karar destek aksiyonu</p>
                 <em className="navigation-hint">Copilot'u aç →</em>
@@ -1120,13 +1108,11 @@ export default function DashboardPage() {
                 <div className="priority-list">
                   {(morningBriefing?.top_actions?.length
                     ? morningBriefing.top_actions
-                    : hasAnalysis
-                      ? [
-                          `${metrics?.critical_stock_count ?? 0} kritik stok ürününü kontrol et.`,
-                          `${overStockCount ?? 0} fazla stok ürününün siparişini gözden geçir.`,
-                          `${orderSuggestions.length} sipariş önerisini bütçeye göre sırala.`,
-                        ]
-                      : ["Analiz için üç Excel dosyasını yükleyip Analizi Başlat butonuna basın."]
+                    : [
+                        `${metrics?.critical_stock_count ?? 0} kritik stok ürününü kontrol et.`,
+                        `${overStockCount ?? 0} fazla stok ürününün siparişini gözden geçir.`,
+                        `${orderSuggestions.length} sipariş önerisini bütçeye göre sırala.`,
+                      ]
                   )
                     .slice(0, 4)
                     .map((item, index) => (
@@ -1336,7 +1322,7 @@ export default function DashboardPage() {
             <section className="insight-kpi-grid">
               <div className="insight-kpi">
                 <span>Risk Skoru</span>
-                <strong>{hasAnalysis ? (metrics?.risk_score ?? "-") : "-"}</strong>
+                <strong>{metrics?.risk_score ?? "-"}</strong>
                 <p>
                   {metrics ? "Son analiz sonucu" : "Henüz analiz yapılmadı"}
                 </p>
@@ -1344,7 +1330,7 @@ export default function DashboardPage() {
 
               <div className="insight-kpi">
                 <span>Kritik Stok</span>
-                <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
+                <strong>{metrics?.critical_stock_count ?? "-"}</strong>
                 <p>
                   {metrics
                     ? "Kritik stoktaki ürün sayısı"
@@ -1380,7 +1366,7 @@ export default function DashboardPage() {
 
               <div className="insight-kpi">
                 <span>AI Öneri Sayısı</span>
-                <strong>{hasAnalysis ? (metrics?.ai_suggestion_count ?? "-") : "-"}</strong>
+                <strong>{metrics?.ai_suggestion_count ?? "-"}</strong>
                 <p>
                   {metrics ? "Üretilen öneri sayısı" : "Henüz analiz yapılmadı"}
                 </p>
@@ -1397,11 +1383,11 @@ export default function DashboardPage() {
                   color: "#0f766e",
                 }}
               >
-                {hasAnalysis ? `${healthScore}/100` : "-"}
+                {healthScore}/100
               </h1>
 
               <progress
-                value={hasAnalysis ? healthScore : 0}
+                value={healthScore}
                 max={100}
                 style={{
                   width: "100%",
@@ -1415,18 +1401,18 @@ export default function DashboardPage() {
                   Genel Durum : <strong>{healthStatus}</strong>
                 </p>
                 <p>
-                  Risk : <strong>{hasAnalysis ? (metrics?.risk_score ?? "-") : "-"}</strong>
+                  Risk : <strong>{metrics?.risk_score ?? "-"}</strong>
                 </p>
                 <p>
                   Kritik Stok :{" "}
-                  <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
+                  <strong>{metrics?.critical_stock_count ?? "-"}</strong>
                 </p>
                 <p>
                   Fazla Stok : <strong>{overStockCount ?? "-"}</strong>
                 </p>
                 <p>
                   AI Önerileri :{" "}
-                  <strong>{hasAnalysis ? (metrics?.ai_suggestion_count ?? "-") : "-"}</strong>
+                  <strong>{metrics?.ai_suggestion_count ?? "-"}</strong>
                 </p>
               </div>
             </section>
@@ -1589,7 +1575,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {hasAnalysis && activeModule === "☀️ Sabah Brifingi" && (
+        {activeModule === "☀️ Sabah Brifingi" && (
           <section className="insight-card">
             <h2>☀️ Sabah Brifingi</h2>
             <p>Bugünkü eczane durumunuzun hızlı ve aksiyon odaklı özeti.</p>
@@ -1962,7 +1948,7 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {hasAnalysis && activeModule === "📦 Operasyon Merkezi" && (
+        {activeModule === "📦 Operasyon Merkezi" && (
           <section className="insight-card">
             <p>Stok ve sipariş önerileriniz.</p>
 
@@ -1983,7 +1969,7 @@ export default function DashboardPage() {
 
               <div className="insight-kpi">
                 <span>Kritik Stok</span>
-                <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
+                <strong>{metrics?.critical_stock_count ?? "-"}</strong>
               </div>
 
               <div className="insight-kpi">
@@ -2031,7 +2017,7 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {hasAnalysis && activeModule === "⏱️ Stok Bitiş Tahmini" && (
+        {activeModule === "⏱️ Stok Bitiş Tahmini" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-danger">
@@ -2120,7 +2106,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {hasAnalysis && activeModule === "⏳ Miad Takibi" && (
+        {activeModule === "⏳ Miad Takibi" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-warning">
@@ -2163,7 +2149,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {hasAnalysis && activeModule === "💀 Ölü Stok Analizi" && (
+        {activeModule === "💀 Ölü Stok Analizi" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-overstock">
@@ -2190,7 +2176,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {hasAnalysis && activeModule === "💰 Finans Merkezi" && (
+        {activeModule === "💰 Finans Merkezi" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi finance-kpi">
@@ -2271,7 +2257,7 @@ export default function DashboardPage() {
 
                   <p>
                     Kritik stoklu ürün:{" "}
-                    <strong>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</strong>
+                    <strong>{metrics?.critical_stock_count ?? "-"}</strong>
                   </p>
 
                   <p>
@@ -2514,14 +2500,14 @@ export default function DashboardPage() {
 
               <div className="finance-alert-card finance-alert-danger">
                 <strong>🔴 Kritik Stok</strong>
-                <span>{hasAnalysis ? (metrics?.critical_stock_count ?? "-") : "-"}</span>
+                <span>{metrics?.critical_stock_count ?? "-"}</span>
                 <p>Kayıp satış riski bulunan ürün</p>
               </div>
             </section>
           </>
         )}
 
-        {hasAnalysis && activeModule === "🚨 Risk Merkezi" && (
+        {activeModule === "🚨 Risk Merkezi" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-score">
@@ -2798,7 +2784,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {hasAnalysis && activeModule === "👥 Hasta & Reçete Merkezi" && (
+        {activeModule === "👥 Hasta & Reçete Merkezi" && (
           <>
             <section className="patient-hero">
               <div>
@@ -3209,7 +3195,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {hasAnalysis && activeModule === "🤖 AYÇA Copilot" && (
+        {activeModule === "🤖 AYÇA Copilot" && (
           <>
             <section className="copilot-page-heading">
               <div>
@@ -4193,11 +4179,11 @@ export default function DashboardPage() {
         )}
 
 
-        {hasAnalysis && activeModule === "📊 Raporlar" && (
+        {activeModule === "📊 Raporlar" && (
           <section className="insight-card">
             <h2>📊 AYÇA Insight Raporları</h2>
             <p>Analiz sonuçlarını yönetici özeti, sipariş, risk, stok bitiş, ölü stok, miad ve finans sayfalarıyla Excel olarak indirin.</p>
-            <button className="primary-button" onClick={downloadAnalysisReport} disabled={!hasAnalysis}>
+            <button className="primary-button" onClick={downloadAnalysisReport} disabled={!analyzeResult}>
               📥 Excel Analiz Raporunu İndir
             </button>
             <div className="analysis-summary" style={{ marginTop: 20 }}>
