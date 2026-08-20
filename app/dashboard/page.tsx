@@ -267,6 +267,7 @@ const API_BASE_URL = (
 ).replace(/\/$/, "");
 const API_URL = `${API_BASE_URL}/analyze/`;
 const REPORT_URL = `${API_BASE_URL}/analyze/report`;
+const COPILOT_URL = `${API_BASE_URL}/copilot/ask`;
 
 const modules = [
   "🏠 Dashboard",
@@ -836,120 +837,194 @@ export default function DashboardPage() {
     ),
   );
 
-  function createCopilotAnswer(question: string): string {
-    if (!analyzeResult) {
-      return "Henüz analiz verisi bulunmuyor. Önce üç Excel dosyasını yükleyip Analizi Başlat butonuna basmalısınız.";
-    }
-
-    const normalizedQuestion = question.toLocaleLowerCase("tr-TR").trim();
-
-    if (
-      normalizedQuestion.includes("bugün") ||
-      normalizedQuestion.includes("ne yapmalıyım") ||
-      normalizedQuestion.includes("aksiyon")
-    ) {
-      return [
-        `Bugünün önceliği: ${decisionPriority} (${decisionPriorityScore}/100).`,
-        `Karar güveni: %${decisionConfidenceScore}.`,
-        "Öncelikli aksiyonlar:",
-        ...copilotActions
-          .slice(0, 4)
-          .map((action, index) => `${index + 1}. ${action}`),
-      ].join("\n");
-    }
-
-    if (
-      normalizedQuestion.includes("kritik stok") ||
-      normalizedQuestion.includes("sıfır stok")
-    ) {
-      return `Şu anda ${zeroStockCount} sıfır stok ve ${criticalStockCount} kritik stok kaydı bulunuyor. Önce satış hızı yüksek kritik ürünleri kontrol etmenizi öneriyorum.`;
-    }
-
-    if (
-      normalizedQuestion.includes("sipariş bütçe") ||
-      normalizedQuestion.includes("sipariş tutar") ||
-      normalizedQuestion.includes("ne kadar sipariş")
-    ) {
-      const budget =
-        morningBriefing?.summary.estimated_order_budget ??
-        estimatedOrderAmount ??
-        0;
-      return `Tahmini sipariş bütçesi ${budget.toLocaleString("tr-TR")} ₺. ${suggestionCount} ürün için sipariş önerisi bulunuyor.`;
-    }
-
-    if (
-      normalizedQuestion.includes("sermaye") ||
-      normalizedQuestion.includes("bağlı stok")
-    ) {
-      if (!topCapitalProduct) {
-        return "Sermaye bağlayan ürün analizi için yeterli kayıt bulunamadı.";
-      }
-      return `En fazla sermaye bağlayan ürün ${topCapitalProduct.name}. Tahmini stok değeri ${topCapitalProduct.value.toLocaleString("tr-TR")} ₺.`;
-    }
-
-    if (
-      normalizedQuestion.includes("finans") ||
-      normalizedQuestion.includes("ciro") ||
-      normalizedQuestion.includes("kâr") ||
-      normalizedQuestion.includes("kar")
-    ) {
-      return `Toplam ciro ${totalTurnover.toLocaleString("tr-TR")} ₺, toplam kâr ${totalProfit.toLocaleString("tr-TR")} ₺ ve kâr marjı %${profitMargin.toLocaleString("tr-TR")}. Ortalama satış tutarı ${averageSale.toLocaleString("tr-TR")} ₺.`;
-    }
-
-    if (
-      normalizedQuestion.includes("vip") ||
-      normalizedQuestion.includes("hasta")
-    ) {
-      return `${activePatientCount} aktif hasta, ${vipPatientCount} VIP hasta ve ${lostPatientRiskCount} kayıp riski taşıyan hasta bulunuyor.`;
-    }
-
-    if (
-      normalizedQuestion.includes("doktor") ||
-      normalizedQuestion.includes("hekim")
-    ) {
-      if (!topDoctor) {
-        return "Doktor analizi için satış hareketlerinde doktor veya hekim alanı bulunması gerekiyor.";
-      }
-      return `En yüksek ciro katkısını ${topDoctor.doctor_name} sağlıyor. Toplam katkısı ${(topDoctor.turnover ?? 0).toLocaleString("tr-TR")} ₺ ve reçete sayısı ${topDoctor.prescription_count ?? 0}.`;
-    }
-
-    if (
-      normalizedQuestion.includes("risk") ||
-      normalizedQuestion.includes("tehlike")
-    ) {
-      return `Genel risk skorunuz ${rawRiskScore}. ${criticalStockCount} kritik stok, ${zeroStockCount} sıfır stok ve ${overStockCount ?? 0} fazla stok kaydı bulunuyor.`;
-    }
-
-    if (
-      normalizedQuestion.includes("en güçlü ürün") ||
-      normalizedQuestion.includes("en çok satan") ||
-      normalizedQuestion.includes("en iyi ürün")
-    ) {
-      if (!topFinanceProduct) {
-        return "Ürün performansı için yeterli satış verisi bulunamadı.";
-      }
-      return `Ciro bakımından öne çıkan ürün ${topFinanceProduct.name}. Cirosu ${topFinanceProduct.turnover.toLocaleString("tr-TR")} ₺ ve satılan miktarı ${topFinanceProduct.sales}.`;
-    }
-
-    return `Genel sağlık skoru ${copilotHealthScore}/100 ve durum ${copilotStatus}. Bugünün karar önceliği ${decisionPriority} (${decisionPriorityScore}/100), karar güveni %${decisionConfidenceScore}. Daha net sonuç için “kritik stoklarım nasıl?”, “finansal durumum nasıl?” veya “bugün ne yapmalıyım?” şeklinde sorabilirsiniz.`;
-  }
-
-  function submitCopilotQuestion(question?: string) {
+  async function submitCopilotQuestion(question?: string) {
     const finalQuestion = (question ?? copilotQuestion).trim();
+
     if (!finalQuestion) return;
 
     const timestamp = Date.now();
+
+    if (!analyzeResult) {
+      setCopilotMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: timestamp,
+          role: "user",
+          text: finalQuestion,
+        },
+        {
+          id: timestamp + 1,
+          role: "assistant",
+          text:
+            "Henüz analiz verisi bulunmuyor. Önce üç Excel dosyasını yükleyip Analizi Başlat butonuna basmalısınız.",
+        },
+      ]);
+
+      setCopilotQuestion("");
+      setCopilotTab("ask");
+      return;
+    }
+
+    if (!companyId) {
+      alert("Şirket bilgisi bulunamadı.");
+      return;
+    }
+
     setCopilotMessages((currentMessages) => [
       ...currentMessages,
-      { id: timestamp, role: "user", text: finalQuestion },
       {
-        id: timestamp + 1,
-        role: "assistant",
-        text: createCopilotAnswer(finalQuestion),
+        id: timestamp,
+        role: "user",
+        text: finalQuestion,
       },
     ]);
+
     setCopilotQuestion("");
     setCopilotTab("ask");
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      if (!accessToken) {
+        throw new Error(
+          "Oturum bulunamadı. Lütfen tekrar giriş yapınız.",
+        );
+      }
+
+      const response = await fetch(COPILOT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          company_id: companyId,
+          question: finalQuestion,
+          analysis_result: analyzeResult,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result?.detail ??
+            "AYÇA Copilot cevap oluşturamadı.",
+        );
+      }
+
+      let answer =
+        result.answer ??
+        "Bu soru için doğrulanmış verilerden cevap oluşturulamadı.";
+
+      if (
+        Array.isArray(result.items) &&
+        result.items.length > 0
+      ) {
+        const itemLines = result.items
+          .slice(0, 10)
+          .map(
+            (
+              item: Record<string, unknown>,
+              index: number,
+            ) => {
+              const name =
+                item.patient_name ??
+                item.doctor_name ??
+                item.product_name ??
+                item["Ürün Adı"] ??
+                `Kayıt ${index + 1}`;
+
+              const details: string[] = [];
+
+              if (
+                typeof item.estimated_runout_days ===
+                "number"
+              ) {
+                details.push(
+                  `${item.estimated_runout_days} gün`,
+                );
+              }
+
+              if (
+                typeof item["Önerilen Sipariş"] ===
+                "number"
+              ) {
+                details.push(
+                  `${item["Önerilen Sipariş"]} adet`,
+                );
+              }
+
+              if (
+                typeof item[
+                  "Tahmini Sipariş Tutarı"
+                ] === "number"
+              ) {
+                details.push(
+                  `${Number(
+                    item["Tahmini Sipariş Tutarı"],
+                  ).toLocaleString("tr-TR")} ₺`,
+                );
+              }
+
+              if (typeof item.turnover === "number") {
+                details.push(
+                  `${Number(
+                    item.turnover,
+                  ).toLocaleString("tr-TR")} ₺`,
+                );
+              }
+
+              if (typeof item.segment === "string") {
+                details.push(item.segment);
+              }
+
+              return `${index + 1}. ${String(name)}${
+                details.length
+                  ? ` — ${details.join(" · ")}`
+                  : ""
+              }`;
+            },
+          );
+
+        answer += `\n\n${itemLines.join("\n")}`;
+      }
+
+      if (
+        result.recommended_action &&
+        !answer.includes(result.recommended_action)
+      ) {
+        answer += `
+
+Önerilen aksiyon: ${result.recommended_action}`;
+      }
+
+      setCopilotMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: Date.now(),
+          role: "assistant",
+          text: answer,
+        },
+      ]);
+    } catch (error) {
+      console.error("Copilot error:", error);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "AYÇA Copilot ile bağlantı kurulamadı.";
+
+      setCopilotMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: Date.now(),
+          role: "assistant",
+          text: `Copilot hatası: ${message}`,
+        },
+      ]);
+    }
   }
 
   return (

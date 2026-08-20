@@ -3,12 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers.analyze import router as analyze_router
 from app.routers.admin import router as admin_router
+from app.routers.copilot import router as copilot_router
 
 
 app = FastAPI(
     title="AYÇA Insight API",
     version="0.1.0",
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,3 +43,4 @@ def health_check():
 
 app.include_router(analyze_router)
 app.include_router(admin_router)
+app.include_router(copilot_router)
