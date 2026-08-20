@@ -14,6 +14,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "https://ayca-panel.vercel.app",
     ],
     allow_origin_regex=r"https://.*-3000\.app\.github\.dev",
     allow_credentials=True,
