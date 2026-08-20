@@ -468,10 +468,19 @@ export default function DashboardPage() {
       setAnalysisProgress(70);
       setAnalysisStep(4);
 
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      if (!accessToken) {
+        alert("Oturum bulunamadı. Lütfen tekrar giriş yapınız.");
+        return;
+      }
+
       const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           company_id: companyId,
@@ -535,9 +544,20 @@ export default function DashboardPage() {
     }
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      if (!accessToken) {
+        alert("Oturum bulunamadı. Lütfen tekrar giriş yapınız.");
+        return;
+      }
+
       const response = await fetch(REPORT_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           company_id: companyId,
           inventory_path: inventoryPath,

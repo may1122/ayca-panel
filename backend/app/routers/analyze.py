@@ -1,7 +1,7 @@
 from io import BytesIO
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,61 @@ class AnalyzeRequest(BaseModel):
     inventory_path: str = Field(min_length=1)
     sales_path: str = Field(min_length=1)
     product_path: str = Field(min_length=1)
+
+
+def validate_user_company(
+    company_id: str,
+    authorization: str | None,
+):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Oturum doğrulanamadı.",
+        )
+
+    token = authorization.removeprefix("Bearer ").strip()
+
+    try:
+        auth_result = supabase.auth.get_user(token)
+        user = auth_result.user
+    except Exception as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="Geçersiz veya süresi dolmuş oturum.",
+        ) from exc
+
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Kullanıcı doğrulanamadı.",
+        )
+
+    profile_result = (
+        supabase.table("profiles")
+        .select("company_id,role")
+        .eq("id", user.id)
+        .limit(1)
+        .execute()
+    )
+
+    if not profile_result.data:
+        raise HTTPException(
+            status_code=403,
+            detail="Kullanıcı profili bulunamadı.",
+        )
+
+    profile = profile_result.data[0]
+
+    if profile.get("role") == "admin":
+        return user
+
+    if str(profile.get("company_id")) != str(company_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Bu şirketin verilerine erişim yetkiniz bulunmuyor.",
+        )
+
+    return user
 
 
 def validate_company(company_id: str):
@@ -111,17 +166,29 @@ def run_analysis(payload: AnalyzeRequest):
 
 
 @router.post("/")
-def analyze_post(payload: AnalyzeRequest):
+def analyze_post(
+    payload: AnalyzeRequest,
+    authorization: str | None = Header(default=None),
+):
+    validate_user_company(payload.company_id, authorization)
     return run_analysis(payload)
 
 
 @router.post("")
-def analyze_post_no_slash(payload: AnalyzeRequest):
+def analyze_post_no_slash(
+    payload: AnalyzeRequest,
+    authorization: str | None = Header(default=None),
+):
+    validate_user_company(payload.company_id, authorization)
     return run_analysis(payload)
 
 
 @router.post("/report")
-def analyze_report(payload: AnalyzeRequest):
+def analyze_report(
+    payload: AnalyzeRequest,
+    authorization: str | None = Header(default=None),
+):
+    validate_user_company(payload.company_id, authorization)
     result = build_analysis(payload, persist_metrics=False)
     report_bytes = create_analysis_report(
         inventory_metrics=result["inventory_metrics"],
