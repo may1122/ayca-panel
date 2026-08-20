@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers.analyze import router as analyze_router
+from app.routers.admin import router as admin_router
 
 
 app = FastAPI(
@@ -38,3 +39,4 @@ def health_check():
 
 
 app.include_router(analyze_router)
+app.include_router(admin_router)

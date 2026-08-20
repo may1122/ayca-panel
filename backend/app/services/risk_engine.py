@@ -1,47 +1,9 @@
-import math
-
 import pandas as pd
 
-
-def find_first_column(
-    df: pd.DataFrame,
-    candidates: list[str],
-):
-    for column in candidates:
-        if column in df.columns:
-            return column
-
-    return None
+from app.services.inventory_intelligence_engine import build_inventory_intelligence
 
 
-def normalize_barcode(
-    series: pd.Series,
-) -> pd.Series:
-    return (
-        series
-        .astype(str)
-        .str.strip()
-        .str.replace(
-            r"\.0$",
-            "",
-            regex=True,
-        )
-    )
-
-
-def to_number(
-    series: pd.Series,
-) -> pd.Series:
-    return pd.to_numeric(
-        series,
-        errors="coerce",
-    ).fillna(0)
-
-
-def calculate_risk_metrics(
-    inventory_df=None,
-    product_df=None,
-):
+def calculate_risk_metrics(inventory_df=None, product_df=None):
     if inventory_df is None or inventory_df.empty:
         return {
             "success": False,
@@ -50,433 +12,152 @@ def calculate_risk_metrics(
             "zero_stock_count": 0,
             "critical_stock_count": 0,
             "over_stock_count": 0,
+            "dead_stock_count": 0,
+            "dead_stock_value": 0,
             "risk_alerts": [],
             "risk_products": [],
             "capital_products": [],
+            "stock_runout_products": [],
+            "dead_stock_products": [],
         }
 
-    inventory = inventory_df.copy()
-
-    barcode_column = find_first_column(
-        inventory,
-        [
-            "Barkod",
-            "Barkod No",
-            "Ürün Barkodu",
-        ],
+    intelligence, period_days = build_inventory_intelligence(
+        inventory_df=inventory_df,
+        product_df=product_df,
+        target_stock_days=30,
+        critical_days=5,
+        warning_days=15,
     )
 
-    product_name_column = find_first_column(
-        inventory,
-        [
-            "Ürün Adı",
-            "Ürün",
-            "İlaç Adı",
-        ],
-    )
-
-    stock_column = find_first_column(
-        inventory,
-        [
-            "Stok",
-            "Mevcut Stok",
-            "Stok Adedi",
-        ],
-    )
-
-    critical_stock_column = find_first_column(
-        inventory,
-        [
-            "Kritik Stok",
-            "Minimum Stok",
-            "Min Stok",
-        ],
-    )
-
-    stock_value_column = find_first_column(
-        inventory,
-        [
-            "Mal Top(Kdv Dahil)",
-            "Mal Top(Kdv Hariç)",
-            "Psf Toplam",
-            "Stok Değeri",
-        ],
-    )
-
-    psf_column = find_first_column(
-        inventory,
-        [
-            "Psf",
-            "PSF",
-            "Satış Fiyatı",
-        ],
-    )
-
-    if stock_column is None:
+    if intelligence.empty:
         return {
             "success": False,
             "error": "Envanter dosyasında stok kolonu bulunamadı.",
-            "available_columns": list(inventory.columns),
             "risk_score": 0,
             "zero_stock_count": 0,
             "critical_stock_count": 0,
             "over_stock_count": 0,
+            "dead_stock_count": 0,
+            "dead_stock_value": 0,
             "risk_alerts": [],
             "risk_products": [],
             "capital_products": [],
+            "stock_runout_products": [],
+            "dead_stock_products": [],
         }
 
-    inventory["_stock"] = to_number(
-        inventory[stock_column]
+    zero_mask = (intelligence["stock"] <= 0) & (intelligence["sold_quantity"] > 0)
+    critical_mask = (
+        (intelligence["stock"] > 0)
+        & (intelligence["daily_consumption"] > 0)
+        & (intelligence["stock_days"] <= 5)
+    )
+    warning_mask = (
+        (intelligence["stock"] > 0)
+        & (intelligence["daily_consumption"] > 0)
+        & (intelligence["stock_days"] > 5)
+        & (intelligence["stock_days"] <= 15)
+    )
+    dead_mask = (intelligence["stock"] > 0) & (intelligence["sold_quantity"] <= 0)
+    over_mask = (
+        (intelligence["stock"] > 0)
+        & (intelligence["sold_quantity"] > 0)
+        & (intelligence["stock_days"] >= 90)
     )
 
-    inventory["_critical_stock"] = (
-        to_number(
-            inventory[critical_stock_column]
-        )
-        if critical_stock_column is not None
-        else 0
-    )
+    zero_count = int(zero_mask.sum())
+    critical_count = int(critical_mask.sum())
+    over_count = int(over_mask.sum())
+    dead_count = int(dead_mask.sum())
+    total = max(int(len(intelligence)), 1)
 
-    inventory["_product_name"] = (
-        inventory[product_name_column]
-        .fillna("Bilinmeyen Ürün")
-        .astype(str)
-        .str.strip()
-        if product_name_column is not None
-        else "Bilinmeyen Ürün"
-    )
-
-    if stock_value_column is not None:
-        inventory["_stock_value"] = to_number(
-            inventory[stock_value_column]
-        )
-    elif psf_column is not None:
-        inventory["_stock_value"] = (
-            inventory["_stock"]
-            * to_number(
-                inventory[psf_column]
-            )
-        )
-    else:
-        inventory["_stock_value"] = 0
-
-    inventory["_sold_quantity"] = 0.0
-
-    if (
-        product_df is not None
-        and not product_df.empty
-        and barcode_column is not None
-    ):
-        product = product_df.copy()
-
-        product_barcode_column = find_first_column(
-            product,
-            [
-                "Barkod",
-                "Barkod No",
-                "Ürün Barkodu",
-            ],
-        )
-
-        sold_quantity_column = find_first_column(
-            product,
-            [
-                "Satılan Adet",
-                "Satış Adedi",
-                "Adet",
-            ],
-        )
-
-        if (
-            product_barcode_column is not None
-            and sold_quantity_column is not None
-        ):
-            inventory["_barcode"] = normalize_barcode(
-                inventory[barcode_column]
-            )
-
-            product["_barcode"] = normalize_barcode(
-                product[product_barcode_column]
-            )
-
-            product["_sold_quantity"] = to_number(
-                product[sold_quantity_column]
-            )
-
-            product_summary = (
-                product
-                .groupby(
-                    "_barcode",
-                    as_index=False,
-                )["_sold_quantity"]
-                .sum()
-            )
-
-            inventory = inventory.merge(
-                product_summary,
-                on="_barcode",
-                how="left",
-                suffixes=("", "_product"),
-            )
-
-            inventory["_sold_quantity"] = (
-                inventory["_sold_quantity_product"]
-                .fillna(0)
-            )
-
-    inventory["_sold_quantity"] = to_number(
-        inventory["_sold_quantity"]
-    )
-
-    # Ürün bazlı rapor yaklaşık dönem satışını içerir.
-    # Kritik stok: eldeki stok, rapor satışının yaklaşık %15'inden düşükse.
-    inventory["_dynamic_critical"] = inventory.apply(
-        lambda row: max(
-            float(row["_critical_stock"]),
-            math.ceil(
-                float(row["_sold_quantity"]) * 0.15
-            ),
-        ),
-        axis=1,
-    )
-
-    zero_stock_mask = (
-        inventory["_stock"] <= 0
-    )
-
-    critical_stock_mask = (
-        (inventory["_stock"] > 0)
-        & (inventory["_sold_quantity"] > 0)
-        & (
-            inventory["_stock"]
-            <= inventory["_dynamic_critical"]
-        )
-    )
-
-    over_stock_mask = (
-        (inventory["_stock"] >= 100)
-        & (
-            inventory["_sold_quantity"] <= 3
-        )
-    ) | (
-        (inventory["_stock"] >= 50)
-        & (
-            inventory["_stock"]
-            >= inventory["_sold_quantity"] * 3
-        )
-    )
-
-    # Aynı ürün iki risk grubunda görünmesin.
-    over_stock_mask = (
-        over_stock_mask
-        & ~zero_stock_mask
-        & ~critical_stock_mask
-    )
-
-    zero_stock_count = int(
-        zero_stock_mask.sum()
-    )
-
-    critical_stock_count = int(
-        critical_stock_mask.sum()
-    )
-
-    over_stock_count = int(
-        over_stock_mask.sum()
-    )
-
-    total_products = int(
-        len(inventory)
-    )
-
-    weighted_risk = (
-        zero_stock_count * 3
-        + critical_stock_count * 2
-        + over_stock_count
-    )
-
-    risk_score = (
-        min(
-            round(
-                (
-                    weighted_risk
-                    / max(
-                        total_products * 3,
-                        1,
-                    )
-                )
-                * 100,
-                2,
-            ),
-            100,
-        )
-        if total_products > 0
-        else 0
-    )
-
-    risk_alerts = []
-
-    if zero_stock_count > 0:
-        risk_alerts.append({
-            "type": "zero_stock",
-            "level": "high",
-            "message": (
-                f"{zero_stock_count} üründe stok sıfır veya altında."
-            ),
-        })
-
-    if critical_stock_count > 0:
-        risk_alerts.append({
-            "type": "critical_stock",
-            "level": "high",
-            "message": (
-                f"{critical_stock_count} ürün satış hızına göre kritik seviyede."
-            ),
-        })
-
-    if over_stock_count > 0:
-        risk_alerts.append({
-            "type": "over_stock",
-            "level": "medium",
-            "message": (
-                f"{over_stock_count} üründe fazla stok veya düşük devir riski var."
-            ),
-        })
+    weighted = zero_count * 3 + critical_count * 3 + int(warning_mask.sum()) * 2 + over_count + dead_count
+    risk_score = min(round((weighted / (total * 3)) * 100, 2), 100)
 
     risk_products = []
-
-    for _, row in inventory.iterrows():
-        stock = int(
-            round(
-                float(row["_stock"])
-            )
-        )
-
-        sold_quantity = int(
-            round(
-                float(row["_sold_quantity"])
-            )
-        )
-
-        product_name = str(
-            row["_product_name"]
-        )
-
-        risk_type = None
-        level = None
-        action = None
-        priority = 0
-
-        if stock <= 0:
-            risk_type = "Sıfır stok"
-            level = "Kritik"
-            action = "Acil sipariş"
-            priority = 100000 + sold_quantity
-
-        elif (
-            sold_quantity > 0
-            and stock
-            <= float(row["_dynamic_critical"])
-        ):
-            risk_type = "Kritik stok"
-            level = "Yüksek"
-            action = "Sipariş ver"
-            priority = 70000 + sold_quantity
-
-        elif (
-            (stock >= 100 and sold_quantity <= 3)
-            or (
-                stock >= 50
-                and stock >= sold_quantity * 3
-            )
-        ):
-            risk_type = "Fazla stok"
-            level = "Orta"
-            action = "Siparişi durdur"
-            priority = (
-                30000
-                + stock
-                + float(row["_stock_value"]) / 100
+    masks = [
+        (zero_mask, "Sıfır Stok", "Kritik", "Acil tedarik/sipariş kontrolü yap."),
+        (critical_mask, "Kritik Stok", "Kritik", "Stok bitiş süresine göre siparişi öne çek."),
+        (warning_mask, "Stok Uyarısı", "Yüksek", "15 gün içinde stok planını güncelle."),
+        (over_mask, "Fazla Stok", "Orta", "Siparişi yavaşlat ve satış hızını takip et."),
+        (dead_mask, "Ölü Stok", "Orta", "İade, transfer veya kampanya aksiyonu değerlendir."),
+    ]
+    for mask, risk_type, level, action in masks:
+        for _, row in intelligence[mask].head(15).iterrows():
+            risk_products.append(
+                {
+                    "product_name": row["product_name"],
+                    "risk_type": risk_type,
+                    "stock": round(float(row["stock"]), 2),
+                    "sold_quantity": round(float(row["sold_quantity"]), 2),
+                    "stock_days": None if row["stock_days"] == float("inf") else round(float(row["stock_days"]), 1),
+                    "level": level,
+                    "recommended_action": action,
+                }
             )
 
-        if risk_type is not None:
-            risk_products.append({
-                "product_name": product_name,
-                "risk_type": risk_type,
-                "stock": stock,
-                "sold_quantity": sold_quantity,
-                "level": level,
-                "recommended_action": action,
-                "_priority": priority,
-            })
-
-    risk_products = sorted(
-        risk_products,
-        key=lambda item: item["_priority"],
-        reverse=True,
-    )[:20]
-
-    for item in risk_products:
-        item.pop(
-            "_priority",
-            None,
-        )
-
-    capital_df = inventory[
-        over_stock_mask
-    ].copy()
-
-    capital_df = capital_df.sort_values(
-        by=[
-            "_stock_value",
-            "_stock",
-        ],
-        ascending=[
-            False,
-            False,
-        ],
-    )
-
+    capital = intelligence.sort_values("stock_value", ascending=False).head(20)
     capital_products = [
         {
-            "product_name": str(
-                row["_product_name"]
-            ),
-            "stock": int(
-                round(
-                    float(row["_stock"])
-                )
-            ),
-            "sold_quantity": int(
-                round(
-                    float(row["_sold_quantity"])
-                )
-            ),
-            "stock_value": round(
-                float(row["_stock_value"]),
-                2,
-            ),
-            "status": "Sermaye bağlıyor",
+            "product_name": row["product_name"],
+            "stock": round(float(row["stock"]), 2),
+            "sold_quantity": round(float(row["sold_quantity"]), 2),
+            "stock_value": round(float(row["stock_value"]), 2),
+            "status": row["stock_status"],
         }
-        for _, row in capital_df.head(20).iterrows()
+        for _, row in capital.iterrows()
     ]
+
+    runout = intelligence[
+        (intelligence["daily_consumption"] > 0) & (intelligence["stock_days"] <= 30)
+    ].sort_values("stock_days").head(50)
+    stock_runout_products = [
+        {
+            "product_name": row["product_name"],
+            "stock": round(float(row["stock"]), 2),
+            "sold_quantity": round(float(row["sold_quantity"]), 2),
+            "daily_consumption": round(float(row["daily_consumption"]), 2),
+            "estimated_runout_days": round(float(row["stock_days"]), 1),
+            "status": row["stock_status"],
+        }
+        for _, row in runout.iterrows()
+    ]
+
+    dead = intelligence[dead_mask].sort_values("stock_value", ascending=False).head(50)
+    dead_stock_products = [
+        {
+            "product_name": row["product_name"],
+            "stock": round(float(row["stock"]), 2),
+            "stock_value": round(float(row["stock_value"]), 2),
+            "sold_quantity": round(float(row["sold_quantity"]), 2),
+            "recommended_action": "İade, transfer, kampanya veya sipariş durdurma değerlendir.",
+        }
+        for _, row in dead.iterrows()
+    ]
+
+    alerts = []
+    if zero_count:
+        alerts.append(f"{zero_count} ürün sıfır stokta.")
+    if critical_count:
+        alerts.append(f"{critical_count} ürünün tahmini stok ömrü 5 gün veya altında.")
+    if dead_count:
+        alerts.append(f"{dead_count} hareketsiz üründe sermaye bağlı.")
+    if over_count:
+        alerts.append(f"{over_count} üründe 90 gün ve üzeri stok karşılığı var.")
 
     return {
         "success": True,
+        "analysis_period_days": period_days,
         "risk_score": risk_score,
-        "total_products": total_products,
-        "zero_stock_count": zero_stock_count,
-        "critical_stock_count": critical_stock_count,
-        "over_stock_count": over_stock_count,
-        "risk_alerts": risk_alerts,
+        "zero_stock_count": zero_count,
+        "critical_stock_count": critical_count,
+        "warning_stock_count": int(warning_mask.sum()),
+        "over_stock_count": over_count,
+        "dead_stock_count": dead_count,
+        "dead_stock_value": round(float(intelligence.loc[dead_mask, "stock_value"].sum()), 2),
+        "risk_alerts": alerts,
         "risk_products": risk_products,
         "capital_products": capital_products,
-        "columns_used": {
-            "barcode": barcode_column,
-            "product_name": product_name_column,
-            "stock": stock_column,
-            "critical_stock": critical_stock_column,
-            "stock_value": stock_value_column,
-        },
+        "stock_runout_products": stock_runout_products,
+        "dead_stock_products": dead_stock_products,
     }
