@@ -175,6 +175,26 @@ type CopilotMessage = {
   text: string;
 };
 
+type DecisionSummary = {
+  success: boolean;
+  priority_score: number;
+  priority: string;
+  reason_codes: string[];
+  recommended_action: string;
+  confidence_score: number;
+  summary: {
+    zero_stock_count: number;
+    critical_stock_count: number;
+    warning_stock_count: number;
+    over_stock_count: number;
+    dead_stock_count: number;
+    expiry_warning_count: number;
+    expired_count: number;
+    suggestion_count: number;
+    estimated_order_budget: number;
+  };
+};
+
 type AnalyzeResult = {
   success: boolean;
   analysis_status?: "complete" | "partial" | "failed";
@@ -228,6 +248,7 @@ type AnalyzeResult = {
     product_sales?: { storage_path?: string };
   };
   morning_briefing?: MorningBriefing | null;
+  decision_summary?: DecisionSummary | null;
   patient_metrics?: {
     success?: boolean;
     health_score?: number;
@@ -630,6 +651,16 @@ export default function DashboardPage() {
     morningBriefing?.confidence_score ??
     0;
 
+  const decisionSummary = analyzeResult?.decision_summary ?? null;
+  const decisionPriority = decisionSummary?.priority ?? "Analiz bekleniyor";
+  const decisionPriorityScore = decisionSummary?.priority_score ?? 0;
+  const decisionConfidenceScore =
+    decisionSummary?.confidence_score ?? analysisConfidenceScore;
+  const decisionAction =
+    decisionSummary?.recommended_action ??
+    morningBriefing?.top_actions?.[0] ??
+    "Analiz tamamlandığında AYÇA bugünün öncelikli kararını burada oluşturur.";
+
   const financeDailyRevenue = (
     analyzeResult?.finance_metrics?.daily_revenue ?? []
   )
@@ -788,13 +819,22 @@ export default function DashboardPage() {
   const copilotStrong = morningBriefing?.strong ?? [];
   const copilotWatch = morningBriefing?.watch ?? [];
   const copilotUrgent = morningBriefing?.urgent ?? [];
-  const copilotActions = morningBriefing?.top_actions?.length
+  const briefingActions = morningBriefing?.top_actions?.length
     ? morningBriefing.top_actions
     : [
         `${criticalStockCount} kritik stok ürününü kontrol et.`,
         `${overStockCount ?? 0} fazla stok ürününü incele.`,
         `${suggestionCount} sipariş önerisini değerlendir.`,
       ];
+
+  const copilotActions = Array.from(
+    new Set(
+      [
+        decisionSummary?.recommended_action,
+        ...briefingActions,
+      ].filter((item): item is string => Boolean(item)),
+    ),
+  );
 
   function createCopilotAnswer(question: string): string {
     if (!analyzeResult) {
@@ -809,7 +849,9 @@ export default function DashboardPage() {
       normalizedQuestion.includes("aksiyon")
     ) {
       return [
-        "Bugünün öncelikli aksiyonları:",
+        `Bugünün önceliği: ${decisionPriority} (${decisionPriorityScore}/100).`,
+        `Karar güveni: %${decisionConfidenceScore}.`,
+        "Öncelikli aksiyonlar:",
         ...copilotActions
           .slice(0, 4)
           .map((action, index) => `${index + 1}. ${action}`),
@@ -889,7 +931,7 @@ export default function DashboardPage() {
       return `Ciro bakımından öne çıkan ürün ${topFinanceProduct.name}. Cirosu ${topFinanceProduct.turnover.toLocaleString("tr-TR")} ₺ ve satılan miktarı ${topFinanceProduct.sales}.`;
     }
 
-    return `Genel sağlık skoru ${copilotHealthScore}/100 ve durum ${copilotStatus}. Daha net sonuç için “kritik stoklarım nasıl?”, “finansal durumum nasıl?”, “kaç VIP hastam var?” veya “bugün ne yapmalıyım?” şeklinde sorabilirsiniz.`;
+    return `Genel sağlık skoru ${copilotHealthScore}/100 ve durum ${copilotStatus}. Bugünün karar önceliği ${decisionPriority} (${decisionPriorityScore}/100), karar güveni %${decisionConfidenceScore}. Daha net sonuç için “kritik stoklarım nasıl?”, “finansal durumum nasıl?” veya “bugün ne yapmalıyım?” şeklinde sorabilirsiniz.`;
   }
 
   function submitCopilotQuestion(question?: string) {
@@ -3256,22 +3298,58 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="copilot-score-card">
-                <span>Genel Sağlık Skoru</span>
-                <strong>{copilotHealthScore}</strong>
-                <small>/100 · {copilotStatus}</small>
+                <span>Bugünün Önceliği</span>
+                <strong>{decisionPriority}</strong>
+                <small>
+                  Öncelik {decisionPriorityScore}/100 · Karar güveni %
+                  {decisionConfidenceScore}
+                </small>
                 <div className="copilot-score-track">
                   <i
                     style={{
-                      width: `${Math.min(100, Math.max(0, copilotHealthScore))}%`,
+                      width: `${Math.min(100, Math.max(0, decisionPriorityScore))}%`,
                     }}
                   />
                 </div>
-                <p>
-                  {morningBriefing?.result ??
-                    "Analiz tamamlandığında AYÇA yönetici yorumu burada oluşur."}
-                </p>
+                <p>{decisionAction}</p>
+                <small>
+                  Genel sağlık: {copilotHealthScore}/100 · {copilotStatus}
+                </small>
               </div>
             </section>
+
+            {decisionSummary && (
+              <section className="insight-card" style={{ marginBottom: 16 }}>
+                <div className="copilot-section-title">
+                  <div>
+                    <span>AYÇA DECISION ENGINE</span>
+                    <h2>Kararın Dayanağı</h2>
+                  </div>
+                  <b>{decisionSummary.priority_score}/100</b>
+                </div>
+                <div className="analysis-summary">
+                  <p>
+                    Öncelik: <strong>{decisionSummary.priority}</strong>
+                  </p>
+                  <p>
+                    Karar güveni:{" "}
+                    <strong>%{decisionSummary.confidence_score}</strong>
+                  </p>
+                  <p>
+                    Önerilen aksiyon:{" "}
+                    <strong>{decisionSummary.recommended_action}</strong>
+                  </p>
+                  <p>
+                    Sinyaller:{" "}
+                    <strong>
+                      {decisionSummary.reason_codes.length
+                        ? decisionSummary.reason_codes.join(" · ")
+                        : "Kritik karar sinyali yok"}
+                    </strong>
+                  </p>
+                </div>
+              </section>
+            )}
 
             <section className="copilot-kpi-grid">
               <div>
@@ -3341,7 +3419,11 @@ export default function DashboardPage() {
                         <span>YÖNETİCİ ÖZETİ</span>
                         <h2>Eczane CEO Özeti</h2>
                       </div>
-                      <b>{copilotHealthScore}/100</b>
+                      <b>
+                        {decisionSummary
+                          ? `${decisionPriority} · ${decisionPriorityScore}/100`
+                          : `${copilotHealthScore}/100`}
+                      </b>
                     </div>
                     <div className="copilot-signal-columns">
                       <div>
@@ -3387,6 +3469,12 @@ export default function DashboardPage() {
                         <h2>Öncelikli Aksiyonlar</h2>
                       </div>
                     </div>
+                    {decisionSummary && (
+                      <p style={{ marginBottom: 12 }}>
+                        Karar güveni:{" "}
+                        <strong>%{decisionSummary.confidence_score}</strong>
+                      </p>
+                    )}
                     {copilotActions.slice(0, 5).map((item, index) => (
                       <div className="copilot-action-row" key={index}>
                         <span>{String(index + 1).padStart(2, "0")}</span>
@@ -3632,7 +3720,7 @@ export default function DashboardPage() {
                         <span>AYÇA İLE KONUŞ</span>
                         <h2>Bana Sor</h2>
                       </div>
-                      <b>Kural tabanlı MVP</b>
+                      <b>Doğrulanmış Decision Engine</b>
                     </div>
                     <div className="copilot-quick-questions">
                       {[

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.services.analysis_engine import calculate_inventory_metrics
 from app.services.dashboard_service import upsert_dashboard_metrics
+from app.services.decision_engine import create_decision_summary
 from app.services.excel_reader import read_excel_dataframe_from_storage
 from app.services.finance_engine import calculate_finance_metrics
 from app.services.inventory_intelligence_engine import calculate_expiry_metrics
@@ -310,6 +311,15 @@ def build_analysis(
         patient_metrics=patient_metrics,
     )
 
+    decision_summary = create_decision_summary(
+        inventory_metrics=inventory_metrics,
+        finance_metrics=finance_metrics,
+        order_suggestions=order_suggestions,
+        risk_metrics=risk_metrics,
+        expiry_metrics=expiry_metrics,
+        analysis_confidence_score=engine_status["confidence_score"],
+    )
+
     morning_briefing = create_morning_briefing(
         inventory_metrics=inventory_metrics,
         finance_metrics=finance_metrics,
@@ -359,6 +369,7 @@ def build_analysis(
         "expiry_metrics": expiry_metrics,
         "patient_metrics": patient_metrics,
         "morning_briefing": morning_briefing,
+        "decision_summary": decision_summary,
         "dashboard_metrics": dashboard_metrics,
     }
 
