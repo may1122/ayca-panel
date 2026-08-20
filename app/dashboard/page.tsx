@@ -258,6 +258,7 @@ export default function DashboardPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
   const [activeModule, setActiveModule] = useState("🏠 Dashboard");
   const [patientTab, setPatientTab] = useState<
     "doctor" | "patient" | "institution" | "prescription"
@@ -351,9 +352,11 @@ export default function DashboardPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("company_id")
+        .select("company_id, full_name")
         .eq("id", userData.user.id)
         .single();
+
+      setFullName(profile?.full_name ?? "");
 
       if (profile?.company_id) {
         setCompanyId(profile.company_id);
@@ -943,7 +946,7 @@ export default function DashboardPage() {
         <header className="insight-header">
           <div>
             <span className="eyebrow">AYÇA Insight Platform</span>
-            <h1>Günaydın, Abdullah 👋</h1>
+            <h1>Günaydın, {fullName?.split(" ")[0] || "Hoş geldiniz"} 👋</h1>
             <p>
               {company?.name ?? "İdil Eczanesi"} · {email}
             </p>
@@ -1622,7 +1625,7 @@ export default function DashboardPage() {
             <section className="briefing-hero">
               <div className="briefing-intro">
                 <span className="hero-kicker">GÜNLÜK YÖNETİCİ BRİFİNGİ</span>
-                <h2>Günaydın Abdullah, bugün odak net.</h2>
+                <h2>Günaydın {fullName?.split(" ")[0] || ""}, bugün odak net.</h2>
                 <p>
                   {morningBriefing?.result ??
                     "Analizi başlatın; AYÇA stok, finans ve risk sinyallerinden günlük aksiyon planınızı oluştursun."}
