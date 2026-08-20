@@ -366,15 +366,8 @@ export default function DashboardPage() {
 
         setCompany(companyData);
 
-        const { data: metricsData } = await supabase
-          .from("dashboard_metrics")
-          .select("*")
-          .eq("company_id", profile.company_id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
-
-        setMetrics(metricsData);
+        // Historical analysis data must not be shown on initial page load.
+        setMetrics(null);
       }
     }
 
@@ -586,6 +579,8 @@ export default function DashboardPage() {
     });
   }
 
+  const hasAnalysis = analyzeResult !== null;
+
   const estimatedOrderAmount =
     metrics?.estimated_order_budget ?? metrics?.estimated_order_amount;
 
@@ -697,15 +692,17 @@ export default function DashboardPage() {
   const totalRiskItems =
     criticalStockCount + zeroStockCount + (overStockCount ?? 0);
 
-  const healthScore = Math.max(
-    0,
-    Math.round(
-      100 -
-        (metrics?.risk_score ?? 0) * 15 -
-        (metrics?.critical_stock_count ?? 0) * 2 -
-        (overStockCount ?? 0) * 0.5,
-    ),
-  );
+  const healthScore = hasAnalysis
+    ? Math.max(
+        0,
+        Math.round(
+          100 -
+            (metrics?.risk_score ?? 0) * 15 -
+            (metrics?.critical_stock_count ?? 0) * 2 -
+            (overStockCount ?? 0) * 0.5,
+        ),
+      )
+    : 0;
 
   const healthStatus =
     healthScore >= 90
@@ -986,6 +983,22 @@ export default function DashboardPage() {
           </p>
         </section>
 
+        {!hasAnalysis && activeModule !== "🏠 Dashboard" ? (
+          <section className="insight-card">
+            <h2>Analiz bekleniyor</h2>
+            <p>
+              Bu modüldeki verileri görmek için Dashboard üzerinden üç Excel
+              dosyasını yükleyip Analizi Başlat butonuna basınız.
+            </p>
+            <button
+              className="analysis-btn"
+              type="button"
+              onClick={() => navigateToModule("🏠 Dashboard")}
+            >
+              Dashboard&apos;a Dön
+            </button>
+          </section>
+        ) : (
         <AnimatedPage animationKey={activeModule}>
         {activeModule === "🏠 Dashboard" && (
           <>
@@ -999,9 +1012,9 @@ export default function DashboardPage() {
                   çıkarır.
                 </p>
                 <div className="hero-badges">
-                  <span>● Veriler güncel</span>
+                  <span>{hasAnalysis ? "● Veriler güncel" : "○ Veri bekleniyor"}</span>
                   <span>3 kaynak dosya</span>
-                  <span>{metrics ? "Analiz hazır" : "Analiz bekleniyor"}</span>
+                  <span>{hasAnalysis ? "Analiz hazır" : "Analiz bekleniyor"}</span>
                 </div>
               </div>
               <button
@@ -1011,12 +1024,18 @@ export default function DashboardPage() {
                 aria-label="Sabah Brifingi modülünü aç"
               >
                 <span>Eczane Sağlık Skoru</span>
-                <strong>{morningBriefing?.score ?? healthScore}</strong>
-                <small>/100 · {morningBriefing?.status ?? healthStatus}</small>
+                <strong>
+                  {hasAnalysis ? (morningBriefing?.score ?? healthScore) : "-"}
+                </strong>
+                <small>
+                  {hasAnalysis
+                    ? `/100 · ${morningBriefing?.status ?? healthStatus}`
+                    : "Analiz bekleniyor"}
+                </small>
                 <div className="score-track">
                   <i
                     style={{
-                      width: `${morningBriefing?.score ?? healthScore}%`,
+                      width: `${hasAnalysis ? (morningBriefing?.score ?? healthScore) : 0}%`,
                     }}
                   />
                 </div>
@@ -4217,6 +4236,7 @@ export default function DashboardPage() {
             </section>
           )}
         </AnimatedPage>
+        )}
       </section>
     </main>
   );
