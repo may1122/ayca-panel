@@ -1,21 +1,21 @@
 from io import BytesIO
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.services.supabase_client import supabase
-from app.services.excel_reader import read_excel_dataframe_from_storage
 from app.services.analysis_engine import calculate_inventory_metrics
+from app.services.dashboard_service import upsert_dashboard_metrics
+from app.services.excel_reader import read_excel_dataframe_from_storage
 from app.services.finance_engine import calculate_finance_metrics
-from app.services.order_engine import calculate_order_suggestions
-from app.services.risk_engine import calculate_risk_metrics
 from app.services.inventory_intelligence_engine import calculate_expiry_metrics
 from app.services.morning_briefing_engine import create_morning_briefing
-from app.services.dashboard_service import upsert_dashboard_metrics
+from app.services.order_engine import calculate_order_suggestions
 from app.services.patient_engine import calculate_patient_metrics
 from app.services.report_engine import create_analysis_report
+from app.services.risk_engine import calculate_risk_metrics
+from app.services.supabase_client import supabase
 
 
 router = APIRouter(prefix="/analyze", tags=["Analyze"])
@@ -91,39 +91,225 @@ def validate_company(company_id: str):
         .limit(1)
         .execute()
     )
+
     if not result.data:
-        raise HTTPException(status_code=404, detail="Şirket bulunamadı.")
-    return result.data[0]
+        raise HTTPException(
+            status_code=404,
+            detail="Şirket bulunamadı.",
+        )
+
+    company = result.data[0]
+
+    status = str(company.get("status") or "").strip().lower()
+
+    if status and status not in {
+        "active",
+        "aktif",
+        "trial",
+        "demo",
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail="Şirket hesabı aktif değil. Analiz başlatılamaz.",
+        )
+
+    return company
 
 
-def validate_storage_path(company_id: str, storage_path: str, label: str):
+def validate_storage_path(
+    company_id: str,
+    storage_path: str,
+    label: str,
+):
     if not storage_path.startswith(f"{company_id}/"):
-        raise HTTPException(status_code=400, detail=f"{label} dosyası bu şirkete ait görünmüyor.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} dosyası bu şirkete ait görünmüyor.",
+        )
 
 
-def load_dataframe(storage_path: str, label: str):
+def load_dataframe(
+    storage_path: str,
+    label: str,
+):
     try:
-        return read_excel_dataframe_from_storage(storage_path)
+        return read_excel_dataframe_from_storage(
+            storage_path
+        )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"{label} dosyası okunamadı: {exc}") from exc
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label} dosyası okunamadı: {exc}",
+        ) from exc
 
 
-def build_analysis(payload: AnalyzeRequest, persist_metrics: bool = True):
-    company = validate_company(payload.company_id)
-    validate_storage_path(payload.company_id, payload.inventory_path, "Envanter")
-    validate_storage_path(payload.company_id, payload.sales_path, "Satış")
-    validate_storage_path(payload.company_id, payload.product_path, "Ürün satış")
+def _engine_status(
+    *,
+    inventory_metrics: dict,
+    finance_metrics: dict,
+    order_suggestions: dict,
+    risk_metrics: dict,
+    expiry_metrics: dict,
+    patient_metrics: dict,
+) -> dict:
+    engines = {
+        "inventory": inventory_metrics,
+        "finance": finance_metrics,
+        "order": order_suggestions,
+        "risk": risk_metrics,
+        "expiry": expiry_metrics,
+        "patient": patient_metrics,
+    }
 
-    inventory_df = load_dataframe(payload.inventory_path, "Envanter")
-    sales_df = load_dataframe(payload.sales_path, "Satış")
-    product_df = load_dataframe(payload.product_path, "Ürün satış")
+    checks = {
+        name: bool(result.get("success"))
+        for name, result in engines.items()
+    }
 
-    inventory_metrics = calculate_inventory_metrics(inventory_df)
-    finance_metrics = calculate_finance_metrics(sales_df=sales_df, product_df=product_df)
-    order_suggestions = calculate_order_suggestions(inventory_df=inventory_df, product_df=product_df)
-    risk_metrics = calculate_risk_metrics(inventory_df=inventory_df, product_df=product_df)
-    expiry_metrics = calculate_expiry_metrics(inventory_df=inventory_df)
-    patient_metrics = calculate_patient_metrics(sales_df=sales_df, product_df=product_df)
+    critical_engines = [
+        "inventory",
+        "finance",
+        "order",
+        "risk",
+    ]
+
+    critical_success_count = sum(
+        1
+        for name in critical_engines
+        if checks.get(name)
+    )
+
+    success_count = sum(
+        1 for value in checks.values() if value
+    )
+
+    failed_engines = [
+        name
+        for name, success in checks.items()
+        if not success
+    ]
+
+    warnings: list[str] = []
+
+    for name, result in engines.items():
+        if not result.get("success"):
+            error = result.get("error")
+            if error:
+                warnings.append(
+                    f"{name}: {error}"
+                )
+
+        for warning in result.get("warnings", []):
+            warning_text = f"{name}: {warning}"
+            if warning_text not in warnings:
+                warnings.append(warning_text)
+
+    if critical_success_count == len(critical_engines):
+        status = (
+            "complete"
+            if success_count == len(engines)
+            else "partial"
+        )
+        overall_success = True
+    elif critical_success_count >= 2:
+        status = "partial"
+        overall_success = True
+    else:
+        status = "failed"
+        overall_success = False
+
+    confidence_score = round(
+        (
+            success_count
+            / max(len(engines), 1)
+        )
+        * 100
+    )
+
+    return {
+        "success": overall_success,
+        "status": status,
+        "confidence_score": confidence_score,
+        "checks": checks,
+        "failed_engines": failed_engines,
+        "warnings": warnings[:20],
+    }
+
+
+def build_analysis(
+    payload: AnalyzeRequest,
+    persist_metrics: bool = True,
+):
+    company = validate_company(
+        payload.company_id
+    )
+
+    validate_storage_path(
+        payload.company_id,
+        payload.inventory_path,
+        "Envanter",
+    )
+    validate_storage_path(
+        payload.company_id,
+        payload.sales_path,
+        "Satış",
+    )
+    validate_storage_path(
+        payload.company_id,
+        payload.product_path,
+        "Ürün satış",
+    )
+
+    inventory_df = load_dataframe(
+        payload.inventory_path,
+        "Envanter",
+    )
+    sales_df = load_dataframe(
+        payload.sales_path,
+        "Satış",
+    )
+    product_df = load_dataframe(
+        payload.product_path,
+        "Ürün satış",
+    )
+
+    inventory_metrics = calculate_inventory_metrics(
+        inventory_df
+    )
+
+    finance_metrics = calculate_finance_metrics(
+        sales_df=sales_df,
+        product_df=product_df,
+    )
+
+    order_suggestions = calculate_order_suggestions(
+        inventory_df=inventory_df,
+        product_df=product_df,
+    )
+
+    risk_metrics = calculate_risk_metrics(
+        inventory_df=inventory_df,
+        product_df=product_df,
+    )
+
+    expiry_metrics = calculate_expiry_metrics(
+        inventory_df=inventory_df
+    )
+
+    patient_metrics = calculate_patient_metrics(
+        sales_df=sales_df,
+        product_df=product_df,
+    )
+
+    engine_status = _engine_status(
+        inventory_metrics=inventory_metrics,
+        finance_metrics=finance_metrics,
+        order_suggestions=order_suggestions,
+        risk_metrics=risk_metrics,
+        expiry_metrics=expiry_metrics,
+        patient_metrics=patient_metrics,
+    )
+
     morning_briefing = create_morning_briefing(
         inventory_metrics=inventory_metrics,
         finance_metrics=finance_metrics,
@@ -133,7 +319,8 @@ def build_analysis(payload: AnalyzeRequest, persist_metrics: bool = True):
     )
 
     dashboard_metrics = None
-    if persist_metrics:
+
+    if persist_metrics and engine_status["success"]:
         dashboard_metrics = upsert_dashboard_metrics(
             company_id=payload.company_id,
             inventory_metrics=inventory_metrics,
@@ -143,12 +330,27 @@ def build_analysis(payload: AnalyzeRequest, persist_metrics: bool = True):
         )
 
     return {
-        "success": True,
+        "success": engine_status["success"],
+        "analysis_status": engine_status["status"],
+        "analysis_confidence_score": engine_status[
+            "confidence_score"
+        ],
+        "analysis_checks": engine_status["checks"],
+        "analysis_failed_engines": engine_status[
+            "failed_engines"
+        ],
+        "analysis_warnings": engine_status["warnings"],
         "company": company,
         "files": {
-            "inventory": {"storage_path": payload.inventory_path},
-            "sales": {"storage_path": payload.sales_path},
-            "product_sales": {"storage_path": payload.product_path},
+            "inventory": {
+                "storage_path": payload.inventory_path,
+            },
+            "sales": {
+                "storage_path": payload.sales_path,
+            },
+            "product_sales": {
+                "storage_path": payload.product_path,
+            },
         },
         "inventory_metrics": inventory_metrics,
         "finance_metrics": finance_metrics,
@@ -162,7 +364,10 @@ def build_analysis(payload: AnalyzeRequest, persist_metrics: bool = True):
 
 
 def run_analysis(payload: AnalyzeRequest):
-    return build_analysis(payload, persist_metrics=True)
+    return build_analysis(
+        payload,
+        persist_metrics=True,
+    )
 
 
 @router.post("/")
@@ -170,7 +375,11 @@ def analyze_post(
     payload: AnalyzeRequest,
     authorization: str | None = Header(default=None),
 ):
-    validate_user_company(payload.company_id, authorization)
+    validate_user_company(
+        payload.company_id,
+        authorization,
+    )
+
     return run_analysis(payload)
 
 
@@ -179,7 +388,11 @@ def analyze_post_no_slash(
     payload: AnalyzeRequest,
     authorization: str | None = Header(default=None),
 ):
-    validate_user_company(payload.company_id, authorization)
+    validate_user_company(
+        payload.company_id,
+        authorization,
+    )
+
     return run_analysis(payload)
 
 
@@ -188,29 +401,91 @@ def analyze_report(
     payload: AnalyzeRequest,
     authorization: str | None = Header(default=None),
 ):
-    validate_user_company(payload.company_id, authorization)
-    result = build_analysis(payload, persist_metrics=False)
-    report_bytes = create_analysis_report(
-        inventory_metrics=result["inventory_metrics"],
-        finance_metrics=result["finance_metrics"],
-        order_suggestions=result["order_suggestions"],
-        risk_metrics=result["risk_metrics"],
-        expiry_metrics=result["expiry_metrics"],
-        morning_briefing=result["morning_briefing"],
+    validate_user_company(
+        payload.company_id,
+        authorization,
     )
-    filename = f"AYCA_Insight_Rapor_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+
+    result = build_analysis(
+        payload,
+        persist_metrics=False,
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    "Rapor üretmek için gerekli temel "
+                    "analizler tamamlanamadı."
+                ),
+                "failed_engines": result[
+                    "analysis_failed_engines"
+                ],
+                "warnings": result[
+                    "analysis_warnings"
+                ],
+            },
+        )
+
+    report_bytes = create_analysis_report(
+        inventory_metrics=result[
+            "inventory_metrics"
+        ],
+        finance_metrics=result[
+            "finance_metrics"
+        ],
+        order_suggestions=result[
+            "order_suggestions"
+        ],
+        risk_metrics=result[
+            "risk_metrics"
+        ],
+        expiry_metrics=result[
+            "expiry_metrics"
+        ],
+        morning_briefing=result[
+            "morning_briefing"
+        ],
+    )
+
+    filename = (
+        "AYCA_Insight_Rapor_"
+        f"{datetime.now().strftime('%Y%m%d_%H%M')}"
+        ".xlsx"
+    )
+
     return StreamingResponse(
         BytesIO(report_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"'
+            )
+        },
     )
 
 
 @router.get("/")
 def analyze_get():
-    return {"success": True, "message": "Analiz için POST isteği ve üç dosya yolu gönderilmelidir."}
+    return {
+        "success": True,
+        "message": (
+            "Analiz için POST isteği ve üç dosya yolu "
+            "gönderilmelidir."
+        ),
+    }
 
 
 @router.get("")
 def analyze_get_no_slash():
-    return {"success": True, "message": "Analiz için POST isteği ve üç dosya yolu gönderilmelidir."}
+    return {
+        "success": True,
+        "message": (
+            "Analiz için POST isteği ve üç dosya yolu "
+            "gönderilmelidir."
+        ),
+    }

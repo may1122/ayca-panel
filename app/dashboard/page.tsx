@@ -83,6 +83,8 @@ type MorningBriefing = {
   score: number;
   status: string;
   score_items: Record<string, number>;
+  confidence_score?: number;
+  data_warnings?: string[];
   top_actions: string[];
   strong: string[];
   watch: string[];
@@ -175,6 +177,11 @@ type CopilotMessage = {
 
 type AnalyzeResult = {
   success: boolean;
+  analysis_status?: "complete" | "partial" | "failed";
+  analysis_confidence_score?: number;
+  analysis_checks?: Record<string, boolean>;
+  analysis_failed_engines?: string[];
+  analysis_warnings?: string[];
   dashboard_metrics?: DashboardMetrics[] | DashboardMetrics | null;
   order_suggestions?: {
     success: boolean;
@@ -612,6 +619,17 @@ export default function DashboardPage() {
 
   const morningBriefing = analyzeResult?.morning_briefing ?? null;
 
+  const suggestionCount =
+    analyzeResult?.order_suggestions?.suggestion_count ??
+    morningBriefing?.summary.suggestion_count ??
+    metrics?.ai_suggestion_count ??
+    orderSuggestions.length;
+
+  const analysisConfidenceScore =
+    analyzeResult?.analysis_confidence_score ??
+    morningBriefing?.confidence_score ??
+    0;
+
   const financeDailyRevenue = (
     analyzeResult?.finance_metrics?.daily_revenue ?? []
   )
@@ -659,19 +677,6 @@ export default function DashboardPage() {
   const expiryMetrics = analyzeResult?.expiry_metrics ?? null;
   const expiryProducts = expiryMetrics?.products ?? [];
 
-  const financeHealthScore = Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(
-        100 -
-          (metrics?.risk_score ?? 0) * 5 -
-          (metrics?.critical_stock_count ?? 0) * 2 -
-          (overStockCount ?? 0),
-      ),
-    ),
-  );
-
   const maximumFinanceRevenue = Math.max(
     ...financeDailyRevenue.map((item) => item.value),
     1,
@@ -715,24 +720,17 @@ export default function DashboardPage() {
   const totalRiskItems =
     criticalStockCount + zeroStockCount + (overStockCount ?? 0);
 
-  const healthScore = hasAnalysis
-    ? Math.max(
-        0,
-        Math.round(
-          100 -
-            (metrics?.risk_score ?? 0) * 15 -
-            (metrics?.critical_stock_count ?? 0) * 2 -
-            (overStockCount ?? 0) * 0.5,
-        ),
-      )
-    : 0;
+  const healthScore = hasAnalysis ? (morningBriefing?.score ?? 0) : 0;
 
   const healthStatus =
-    healthScore >= 90
-      ? "🟢 Sağlıklı"
+    morningBriefing?.status ??
+    (healthScore >= 90
+      ? "Sağlıklı"
       : healthScore >= 75
-        ? "🟡 Dikkat"
-        : "🔴 Riskli";
+        ? "Dikkat"
+        : healthScore >= 50
+          ? "Riskli"
+          : "Kritik");
 
   const patientMetrics = analyzeResult?.patient_metrics ?? null;
   const doctorMetrics = patientMetrics?.doctors ?? [];
@@ -785,8 +783,8 @@ export default function DashboardPage() {
       (first, second) => second.value - first.value,
     )[0] ?? null;
 
-  const copilotHealthScore = morningBriefing?.score ?? healthScore;
-  const copilotStatus = morningBriefing?.status ?? healthStatus;
+  const copilotHealthScore = healthScore;
+  const copilotStatus = healthStatus;
   const copilotStrong = morningBriefing?.strong ?? [];
   const copilotWatch = morningBriefing?.watch ?? [];
   const copilotUrgent = morningBriefing?.urgent ?? [];
@@ -795,7 +793,7 @@ export default function DashboardPage() {
     : [
         `${criticalStockCount} kritik stok ürününü kontrol et.`,
         `${overStockCount ?? 0} fazla stok ürününü incele.`,
-        `${orderSuggestions.length} sipariş önerisini değerlendir.`,
+        `${suggestionCount} sipariş önerisini değerlendir.`,
       ];
 
   function createCopilotAnswer(question: string): string {
@@ -834,7 +832,7 @@ export default function DashboardPage() {
         morningBriefing?.summary.estimated_order_budget ??
         estimatedOrderAmount ??
         0;
-      return `Tahmini sipariş bütçesi ${budget.toLocaleString("tr-TR")} ₺. ${orderSuggestions.length} ürün için sipariş önerisi bulunuyor.`;
+      return `Tahmini sipariş bütçesi ${budget.toLocaleString("tr-TR")} ₺. ${suggestionCount} ürün için sipariş önerisi bulunuyor.`;
     }
 
     if (
@@ -1048,17 +1046,17 @@ export default function DashboardPage() {
               >
                 <span>Eczane Sağlık Skoru</span>
                 <strong>
-                  {hasAnalysis ? (morningBriefing?.score ?? healthScore) : "-"}
+                  {hasAnalysis ? healthScore : "-"}
                 </strong>
                 <small>
                   {hasAnalysis
-                    ? `/100 · ${morningBriefing?.status ?? healthStatus}`
+                    ? `/100 · ${healthStatus}`
                     : "Analiz bekleniyor"}
                 </small>
                 <div className="score-track">
                   <i
                     style={{
-                      width: `${hasAnalysis ? (morningBriefing?.score ?? healthScore) : 0}%`,
+                      width: `${hasAnalysis ? healthScore : 0}%`,
                     }}
                   />
                 </div>
@@ -1092,17 +1090,13 @@ export default function DashboardPage() {
               <button
                 type="button"
                 className="insight-kpi kpi-orange dashboard-navigation-card"
-                onClick={() => navigateToModule("💰 Finans Merkezi")}
+                onClick={() => navigateToModule("📊 Raporlar")}
               >
-                <b>💸</b>
-                <span>Tahmini Kayıp Kâr</span>
-                <strong>
-                  {metrics?.estimated_lost_profit
-                    ? `${metrics.estimated_lost_profit.toLocaleString("tr-TR")} ₺`
-                    : "-"}
-                </strong>
-                <p>Stok kaynaklı fırsat kaybı</p>
-                <em className="navigation-hint">Finansı incele →</em>
+                <b>🧪</b>
+                <span>Veri Güveni</span>
+                <strong>{hasAnalysis ? `%${analysisConfidenceScore}` : "-"}</strong>
+                <p>Analiz motorlarının doğrulama oranı</p>
+                <em className="navigation-hint">Detayları incele →</em>
               </button>
               <button
                 type="button"
@@ -1127,9 +1121,7 @@ export default function DashboardPage() {
                 <b>🤖</b>
                 <span>AYÇA Önerileri</span>
                 <strong>
-                  {metrics?.ai_suggestion_count ??
-                    orderSuggestions.length ??
-                    "-"}
+                  {suggestionCount}
                 </strong>
                 <p>Karar destek aksiyonu</p>
                 <em className="navigation-hint">Copilot'u aç →</em>
@@ -1153,7 +1145,7 @@ export default function DashboardPage() {
                     : [
                         `${metrics?.critical_stock_count ?? 0} kritik stok ürününü kontrol et.`,
                         `${overStockCount ?? 0} fazla stok ürününün siparişini gözden geçir.`,
-                        `${orderSuggestions.length} sipariş önerisini bütçeye göre sırala.`,
+                        `${suggestionCount} sipariş önerisini bütçeye göre sırala.`,
                       ]
                   )
                     .slice(0, 4)
@@ -1198,11 +1190,11 @@ export default function DashboardPage() {
                 </div>
                 <div className="pulse-row">
                   <span>Sipariş fırsatı</span>
-                  <strong>{orderSuggestions.length}</strong>
+                  <strong>{suggestionCount}</strong>
                   <i>
                     <em
                       style={{
-                        width: `${Math.min(100, orderSuggestions.length * 5)}%`,
+                        width: `${Math.min(100, suggestionCount * 5)}%`,
                       }}
                     />
                   </i>
@@ -1381,14 +1373,12 @@ export default function DashboardPage() {
               </div>
 
               <div className="insight-kpi">
-                <span>Tahmini Kayıp Kâr</span>
-                <strong>
-                  {metrics?.estimated_lost_profit
-                    ? `${metrics.estimated_lost_profit.toLocaleString("tr-TR")} ₺`
-                    : "-"}
-                </strong>
+                <span>Veri Güveni</span>
+                <strong>{hasAnalysis ? `%${analysisConfidenceScore}` : "-"}</strong>
                 <p>
-                  {metrics ? "Tahmini kayıp kâr" : "Henüz analiz yapılmadı"}
+                  {hasAnalysis
+                    ? "Analiz motorlarının doğrulama oranı"
+                    : "Henüz analiz yapılmadı"}
                 </p>
               </div>
 
@@ -1644,12 +1634,12 @@ export default function DashboardPage() {
               </div>
               <div className="briefing-score-panel">
                 <small>BUGÜNKÜ SAĞLIK SKORU</small>
-                <strong>{morningBriefing?.score ?? healthScore}</strong>
-                <b>{morningBriefing?.status ?? healthStatus}</b>
+                <strong>{healthScore}</strong>
+                <b>{healthStatus}</b>
                 <div className="score-track light">
                   <i
                     style={{
-                      width: `${morningBriefing?.score ?? healthScore}%`,
+                      width: `${healthScore}%`,
                     }}
                   />
                 </div>
@@ -1687,8 +1677,7 @@ export default function DashboardPage() {
               <div>
                 <span>🛒 Sipariş Önerisi</span>
                 <strong>
-                  {morningBriefing?.summary.suggestion_count ??
-                    orderSuggestions.length}
+                  {suggestionCount}
                 </strong>
                 <small>
                   {(
@@ -1997,7 +1986,7 @@ export default function DashboardPage() {
             <section className="insight-kpi-grid">
               <div className="insight-kpi">
                 <span>Öneri Sayısı</span>
-                <strong>{orderSuggestions.length}</strong>
+                <strong>{suggestionCount}</strong>
               </div>
 
               <div className="insight-kpi">
@@ -2270,22 +2259,19 @@ export default function DashboardPage() {
 
             <section className="insight-main-grid">
               <div className="insight-card">
-                <h2>💚 Finansal Sağlık</h2>
+                <h2>💚 Finansal Performans</h2>
 
-                <h1 className="finance-score">{financeHealthScore}/100</h1>
+                <h1 className="finance-score">
+                  {analyzeResult?.finance_metrics?.success
+                    ? `%${profitMargin.toLocaleString("tr-TR")}`
+                    : "-"}
+                </h1>
 
-                <progress
-                  value={financeHealthScore}
-                  max={100}
-                  className="finance-progress"
-                />
-
+                <p>Kâr Marjı</p>
                 <p>
-                  {financeHealthScore >= 85
-                    ? "🟢 Güçlü finansal görünüm"
-                    : financeHealthScore >= 70
-                      ? "🟡 Takip edilmesi gereken finansal alanlar var"
-                      : "🔴 Finansal riskler için aksiyon gerekli"}
+                  {analyzeResult?.finance_metrics?.success
+                    ? `Toplam ciro ${totalTurnover.toLocaleString("tr-TR")} ₺ · Kâr ${totalProfit.toLocaleString("tr-TR")} ₺`
+                    : "Finans verisi doğrulanamadı."}
                 </p>
               </div>
 
@@ -2303,14 +2289,8 @@ export default function DashboardPage() {
                   </p>
 
                   <p>
-                    Tahmini kayıp kâr:{" "}
-                    <strong>
-                      {metrics?.estimated_lost_profit
-                        ? `${metrics.estimated_lost_profit.toLocaleString(
-                            "tr-TR",
-                          )} ₺`
-                        : "-"}
-                    </strong>
+                    Veri güveni:{" "}
+                    <strong>%{analysisConfidenceScore}</strong>
                   </p>
 
                   <p>
@@ -2513,9 +2493,9 @@ export default function DashboardPage() {
                   </p>
 
                   <p>
-                    Mevcut finansal sağlık skoru{" "}
-                    <strong>{financeHealthScore}/100</strong>. Sipariş
-                    bütçesinin kritik stoklara yönlendirilmesi finansal
+                    Doğrulanmış kâr marjı{" "}
+                    <strong>%{profitMargin.toLocaleString("tr-TR")}</strong>.
+                    Sipariş bütçesinin kritik stoklara yönlendirilmesi finansal
                     verimliliği artıracaktır.
                   </p>
                 </div>
@@ -2529,9 +2509,9 @@ export default function DashboardPage() {
 
             <section className="finance-alert-grid">
               <div className="finance-alert-card finance-alert-success">
-                <strong>🟢 Finansal Sağlık</strong>
-                <span>{financeHealthScore}/100</span>
-                <p>Genel finansal performans skoru</p>
+                <strong>🟢 Kâr Marjı</strong>
+                <span>%{profitMargin.toLocaleString("tr-TR")}</span>
+                <p>Doğrulanmış finansal performans metriği</p>
               </div>
 
               <div className="finance-alert-card finance-alert-warning">
@@ -2577,15 +2557,9 @@ export default function DashboardPage() {
               </div>
 
               <div className="insight-kpi risk-kpi risk-kpi-loss">
-                <span>💸 Tahmini Kayıp Kâr</span>
-                <strong>
-                  {metrics?.estimated_lost_profit
-                    ? `${metrics.estimated_lost_profit.toLocaleString(
-                        "tr-TR",
-                      )} ₺`
-                    : "-"}
-                </strong>
-                <p>Stok kaynaklı finansal risk</p>
+                <span>🧪 Veri Güveni</span>
+                <strong>%{analysisConfidenceScore}</strong>
+                <p>Analiz motorlarının doğrulama oranı</p>
               </div>
             </section>
 
@@ -2739,15 +2713,11 @@ export default function DashboardPage() {
 
             <section className="risk-insight-grid">
               <div className="insight-card risk-loss-card">
-                <h2>💰 Kayıp Kâr Analizi</h2>
-                <p>Stok kaynaklı tahmini finansal etki</p>
+                <h2>🧪 Analiz Güveni</h2>
+                <p>Risk sonuçlarının veri ve motor doğrulama seviyesi</p>
 
                 <div className="risk-loss-value">
-                  {metrics?.estimated_lost_profit
-                    ? `${metrics.estimated_lost_profit.toLocaleString(
-                        "tr-TR",
-                      )} ₺`
-                    : "-"}
+                  %{analysisConfidenceScore}
                 </div>
 
                 <div className="analysis-summary">
@@ -3311,7 +3281,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <span>🛒 Sipariş Önerisi</span>
-                <strong>{orderSuggestions.length}</strong>
+                <strong>{suggestionCount}</strong>
                 <small>
                   {(
                     morningBriefing?.summary.estimated_order_budget ??
@@ -4229,8 +4199,24 @@ export default function DashboardPage() {
               📥 Excel Analiz Raporunu İndir
             </button>
             <div className="analysis-summary" style={{ marginTop: 20 }}>
-              <p>Analiz durumu: <strong>{analyzeResult ? "Hazır" : "Önce analiz yapınız"}</strong></p>
-              <p>Sipariş önerisi: <strong>{orderSuggestions.length}</strong></p>
+              <p>
+                Analiz durumu:{" "}
+                <strong>
+                  {analyzeResult
+                    ? analyzeResult.analysis_status === "complete"
+                      ? "Tamamlandı"
+                      : analyzeResult.analysis_status === "partial"
+                        ? "Kısmi"
+                        : analyzeResult.analysis_status === "failed"
+                          ? "Başarısız"
+                          : "Hazır"
+                    : "Önce analiz yapınız"}
+                </strong>
+              </p>
+              <p>
+                Veri güveni: <strong>%{analysisConfidenceScore}</strong>
+              </p>
+              <p>Sipariş önerisi: <strong>{suggestionCount}</strong></p>
               <p>Kritik stok: <strong>{criticalStockCount}</strong></p>
               <p>Miad uyarısı: <strong>{expiryMetrics?.warning_count ?? 0}</strong></p>
               <p>Ölü stok: <strong>{deadStockCount}</strong></p>
