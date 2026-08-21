@@ -297,15 +297,19 @@ def build_analysis(
     order_suggestions = calculate_order_suggestions(
         inventory_df=inventory_df,
         product_df=product_df,
+        sales_df=sales_df,
     )
 
     risk_metrics = calculate_risk_metrics(
         inventory_df=inventory_df,
         product_df=product_df,
+        sales_df=sales_df,
     )
 
     expiry_metrics = calculate_expiry_metrics(
-        inventory_df=inventory_df
+        inventory_df=inventory_df,
+        product_df=product_df,
+        sales_df=sales_df,
     )
 
     patient_metrics = calculate_patient_metrics(

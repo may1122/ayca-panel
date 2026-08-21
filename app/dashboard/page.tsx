@@ -164,12 +164,16 @@ type PrescriptionMetric = {
   count: number;
   turnover?: number;
   alert_count?: number;
+  product_count?: number | null;
+  quantity?: number | null;
+  metric_basis?: "direct_prescription" | "product_reference" | string;
+  source?: string;
 };
 
 type CopilotTab =
   "overview" | "stock" | "finance" | "doctor" | "patient" | "ask";
 
-type OperationTab = "stock" | "risk" | "runout" | "expiry" | "dead";
+type OperationTab = "stock" | "risk" | "runout" | "dead";
 
 type FinancePeriod = "week" | "month" | "3months" | "year" | "all";
 
@@ -806,16 +810,7 @@ export default function DashboardPage() {
 
   const riskHealthScore = Math.max(
     0,
-    Math.min(
-      100,
-      Math.round(
-        100 -
-          rawRiskScore * 12 -
-          criticalStockCount * 2 -
-          zeroStockCount * 3 -
-          (overStockCount ?? 0),
-      ),
-    ),
+    Math.min(100, Math.round(100 - rawRiskScore)),
   );
 
   const riskStatus =
@@ -999,9 +994,6 @@ export default function DashboardPage() {
         : null,
       (overStockCount ?? 0) > 0
         ? `${overStockCount} fazla stok ürünü var`
-        : null,
-      (expiryMetrics?.warning_count ?? 0) > 0
-        ? `${expiryMetrics?.warning_count ?? 0} miad uyarısı var`
         : null,
       deadStockCount > 0
         ? `${deadStockCount} ölü stok ürünü var`
@@ -1357,7 +1349,7 @@ export default function DashboardPage() {
               {activeModule === "🏠 Dashboard"
                 ? "Eczanenizin genel durumunu, bugünün önceliklerini ve analiz özetini tek ekranda görün."
                 : activeModule === "📦 Operasyon"
-                  ? "Sipariş, risk, stok bitişi, miad ve ölü stok kararlarını tek çalışma alanında yönetin."
+                  ? "Sipariş, risk, stok bitişi ve ölü stok kararlarını tek çalışma alanında yönetin."
                   : activeModule === "💰 Finans"
                     ? "Ciro, kâr, marj, sermaye ve finansal performansı tek merkezden izleyin."
                     : "Hasta, doktor, kurum ve reçete ilişkilerini tek merkezde yönetin."}
@@ -1801,7 +1793,6 @@ export default function DashboardPage() {
                 ["stock", "📦 Sipariş & Stok"],
                 ["risk", "🚨 Risk"],
                 ["runout", "⏱️ Stok Bitiş"],
-                ["expiry", "⏳ Miad"],
                 ["dead", "💀 Fazla / Ölü Stok"],
               ].map(([key, label]) => (
                 <button
@@ -1956,49 +1947,6 @@ export default function DashboardPage() {
                         </td>
                       </tr>
                     )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </>
-        )}
-
-        {activeModule === "📦 Operasyon" && operationTab === "expiry" && (
-          <>
-            <section className="insight-kpi-grid">
-              <div className="insight-kpi risk-kpi risk-kpi-warning">
-                <span>⏳ Miad Uyarısı</span>
-                <strong>{expiryMetrics?.warning_count ?? "-"}</strong>
-                <p>90 gün içinde miadı dolacak ürün</p>
-              </div>
-              <div className="insight-kpi risk-kpi risk-kpi-danger">
-                <span>🚫 Miadı Geçmiş</span>
-                <strong>{expiryMetrics?.expired_count ?? "-"}</strong>
-                <p>Kontrol edilmesi gereken ürün</p>
-              </div>
-              <div className="insight-kpi">
-                <span>💰 Riskli Stok Değeri</span>
-                <strong>{expiryMetrics?.risk_stock_value != null ? `${expiryMetrics.risk_stock_value.toLocaleString("tr-TR")} ₺` : "-"}</strong>
-                <p>Miad penceresindeki bağlı stok değeri</p>
-              </div>
-              <div className="insight-kpi">
-                <span>📅 En Yakın Miad</span>
-                <strong>{expiryMetrics?.nearest_expiry_days != null ? `${expiryMetrics.nearest_expiry_days} gün` : "-"}</strong>
-                <p>Geçmemiş en yakın son kullanma tarihi</p>
-              </div>
-            </section>
-            <section className="insight-card">
-              <h2>⏳ Miadı Yaklaşan Ürünler</h2>
-              {!expiryMetrics?.success && expiryMetrics?.error && <p>{expiryMetrics.error}</p>}
-              <div className="table-wrapper">
-                <table>
-                  <thead><tr><th>Durum</th><th>Ürün</th><th>Miad</th><th>Kalan Gün</th><th>Stok</th><th>Stok Değeri</th><th>Raf</th><th>Tedarikçi</th></tr></thead>
-                  <tbody>
-                    {expiryProducts.length > 0 ? expiryProducts.map((item, index) => (
-                      <tr key={`${item.product_name}-${index}`}>
-                        <td>{item.status}</td><td>{item.product_name}</td><td>{item.expiry_date}</td><td>{item.days_left}</td><td>{item.stock}</td><td>{item.stock_value.toLocaleString("tr-TR")} ₺</td><td>{item.shelf}</td><td>{item.supplier}</td>
-                      </tr>
-                    )) : <tr><td colSpan={8}>Miad verisi bulunamadı veya analiz yapılmadı.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -2962,23 +2910,44 @@ export default function DashboardPage() {
                       ["Normal Reçete", "💊", "normal"],
                       ["Kırmızı Reçete", "🔴", "kirmizi"],
                       ["Yeşil Reçete", "🟢", "yesil"],
-                      ["Mor / Turuncu", "🟣", "mor"],
+                      ["Mor Reçete", "🟣", "mor"],
+                      ["Turuncu Reçete", "🟠", "turuncu"],
                     ].map(([label, icon, key]) => {
                       const item = prescriptionMetrics.find((row) =>
                         row.prescription_type
                           .toLocaleLowerCase("tr-TR")
                           .includes(key),
                       );
+
+                      const isReferenceMetric =
+                        item?.metric_basis === "product_reference";
+
                       return (
                         <div className="prescription-card" key={label}>
                           <span>
                             {icon} {label}
                           </span>
+
                           <strong>{item?.count ?? "-"}</strong>
+
                           <p>
-                            {item?.turnover != null
-                              ? `${item.turnover.toLocaleString("tr-TR")} ₺ ciro`
-                              : "Veri bekleniyor"}
+                            {!item
+                              ? label === "Normal Reçete"
+                                ? "Doğrudan reçete türü verisi bulunamadı"
+                                : "Referans eşleşmesi bulunamadı"
+                              : isReferenceMetric
+                                ? `${item.product_count ?? item.count} ürün${
+                                    item.quantity != null
+                                      ? ` · ${item.quantity.toLocaleString("tr-TR")} adet`
+                                      : ""
+                                  }${
+                                    item.turnover != null
+                                      ? ` · ${item.turnover.toLocaleString("tr-TR")} ₺ ciro`
+                                      : ""
+                                  }`
+                                : item.turnover != null
+                                  ? `${item.turnover.toLocaleString("tr-TR")} ₺ ciro`
+                                  : "Reçete verisi bulundu"}
                           </p>
                         </div>
                       );
@@ -2991,8 +2960,8 @@ export default function DashboardPage() {
                         <b>01</b>
                         <strong>Kontrollü reçeteleri doğrula</strong>
                         <p>
-                          Kırmızı, yeşil ve özel reçete hareketlerini günlük
-                          kontrol listesine al.
+                          Kırmızı, yeşil, mor ve turuncu kontrollü ürün
+                          sinyallerini günlük kontrol listesine al.
                         </p>
                       </div>
                       <div>

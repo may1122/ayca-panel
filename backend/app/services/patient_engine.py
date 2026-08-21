@@ -358,10 +358,13 @@ def calculate_patient_metrics(
         sales,
         institution_column,
     )
+    # Reçete türü kolonu yoksa bütün satışları "Normal Reçete"
+    # olarak işaretlemiyoruz. Kontrollü reçete sınıflaması ürün
+    # referans motorundan ayrıca yapılır.
     sales["_prescription_type"] = text_series(
         sales,
         prescription_type_column,
-        "Normal Reçete",
+        "",
     )
     sales["_prescription_no"] = text_series(
         sales,
@@ -716,6 +719,185 @@ def build_institution_metrics(
     )[:50]
 
 
+# -------------------------------------------------------------------
+# KONTROLLÜ REÇETE REFERANS MOTORU
+# -------------------------------------------------------------------
+# Kırmızı / Yeşil listeleri önceki AYÇA demo referans motorundan;
+# Mor / Turuncu listeleri kullanıcı tarafından sağlanan referanstan gelir.
+#
+# Bu liste reçete işleminin hukuki/klinik doğrulaması değildir.
+# Ürün adı bazlı karar destek sınıflamasıdır. Canlı üründe barkodlu
+# resmi master liste geldiğinde aynı katman barkodla güçlendirilebilir.
+
+CONTROLLED_PRESCRIPTION_REFERENCE: dict[str, list[str]] = {
+    "Kırmızı Reçete": [
+        "ABSTRAL",
+        "ACTIQ",
+        "ALDINE",
+        "ALDOLAN",
+        "CEDEPTIN",
+        "CONCERTA",
+        "DUROGESIC",
+        "EFFENTORA",
+        "FENTANYL",
+        "FENTANYL CITRATE",
+        "FENTANEST",
+        "FENTAVER",
+        "JURNISTA",
+        "KONSENIDAT",
+        "MEDIKINET",
+        "M ESLON",
+        "M-ESLON",
+        "MORFIA",
+        "MORFIN",
+        "MORPHINE",
+        "OPIVA",
+        "OXOPANE",
+        "PETHIDINE",
+        "PETHOLAN",
+        "RAPIFEN",
+        "RENTANIL",
+        "RITALIN",
+        "SPRAVATO",
+        "SUBOXONE",
+        "SUFENTA",
+        "TALINAT",
+        "ULTIVA",
+        "XYREM",
+    ],
+    "Yeşil Reçete": [
+        "AKINETON",
+        "ALYSE",
+        "ANSIOX",
+        "APO ALPRAZ",
+        "AS ALPRALAM",
+        "ATIVAN",
+        "CODEFEN",
+        "CONTRAMAL",
+        "DALIZOM",
+        "DEMIZOLAM",
+        "DIAPAM",
+        "DIAZEM",
+        "DIAZEPAM DESITIN",
+        "DORMICUM",
+        "DUAMOL",
+        "EKIPENTAL",
+        "FENOKODIN",
+        "FIXDOL",
+        "GALARA",
+        "GERICA",
+        "HYPNOMIDATE",
+        "IMOVANE",
+        "KETALAR",
+        "KLIPAKS",
+        "LIBKOL",
+        "LIZAN",
+        "LUMINAL",
+        "LUMINALETTEN",
+        "LYPRE",
+        "LYRICA",
+        "MADOL",
+        "MIDOLAM",
+        "MILOZ",
+        "NEOGABA",
+        "NERVIUM",
+        "NEURICA",
+        "PADEN",
+        "PAGADIN",
+        "PAGAMAX",
+        "PENTAL",
+        "PERGE",
+        "PIREPSIL",
+        "PRECOBAL",
+        "PRELICA",
+        "PREPLUS",
+        "REGAPEN",
+        "RIVOTRIL",
+        "ROLADOL",
+        "SEDOZOLAM",
+        "SNAPLINE",
+        "SPESICOR",
+        "STABINA",
+        "STABLON",
+        "SYMRA",
+        "TRADOLEX",
+        "TRAMADOLOR",
+        "TRAMOSEL",
+        "TRANXILENE",
+        "ULTRAMEX",
+        "XANAX",
+        "ZALDIAR",
+        "ZENIXA",
+        "ZOLAMID",
+    ],
+    "Mor Reçete": [
+        "OCTAGAM",
+        "TEGELINE",
+        "GENIVIG",
+        "KIOVIG",
+        "PRIVIGEN",
+        "GAMUNEX-C",
+        "FLEBOGAMMA",
+        "NANOGAM",
+        "IG VENA",
+        "CLAIRYG",
+        "PENTAGLOBIN",
+        "HYQVIA",
+        "RHOPHYLAC",
+        "HYPERRHO-D",
+        "IMMUNORHO",
+        "HEPATECT CP",
+        "HEPBQUIN",
+        "HEPAGAM B",
+        "IVHEBEX",
+        "HEPABULIN SN",
+        "TETAQUIN",
+        "HUMAN ALBUMIN",
+        "UMAN ALBUMIN",
+        "PLASBUMIN",
+        "ALBUREX",
+        "ALBUMAN",
+        "ZENALB",
+        "VIALEBEX",
+        "HAEMOCOMPLETTAN P",
+        "TISSEEL",
+        "BERIPLAST-P",
+        "CINRYZE",
+        "HEMLIBRA",
+        "EQUAGAM",
+    ],
+    "Turuncu Reçete": [
+        "FANHDI",
+        "HEMOFIL M",
+        "IMMUNATE",
+        "KOATE-DVI",
+        "HAEMOCTIN SDH",
+        "HAEMATE-P",
+        "OCTANATE",
+        "BERIATE",
+        "EMOCLOT",
+        "REFACTO AF",
+        "ADVATE",
+        "KOVALTRY",
+        "FACTOR 8Y",
+        "ELOCTA",
+        "NOVOEIGHT",
+        "ADYNOVATE",
+        "ESPEROCT",
+        "AIMAFIX",
+        "IMMUNINE",
+        "OCTANINE F",
+        "REPLENINE-VF",
+        "BENEFIX",
+        "ALPROLIX",
+        "FEIBA",
+        "COFACT",
+        "NOVOSEVEN RT",
+        "ARYOSEVEN",
+    ],
+}
+
+
 def normalize_prescription_type(value: Any) -> str:
     text = normalize_text(value)
 
@@ -735,24 +917,224 @@ def normalize_prescription_type(value: Any) -> str:
         return "Normal Reçete"
 
     original = str(value or "").strip()
-    return original if original else "Normal Reçete"
+    return original
 
 
-def build_prescription_metrics(
-    sales: pd.DataFrame,
+def _product_matches_reference(
+    product_name: Any,
+    reference_name: str,
+) -> bool:
+    """
+    Ürün ticari adının referans marka/adını içerip içermediğini güvenli
+    normalize edilmiş token sınırlarıyla kontrol eder.
+
+    Örnek:
+        "LYRICA 75 MG 14 KAPSÜL" -> LYRICA
+        "HUMAN ALBUMIN %20"      -> HUMAN ALBUMIN
+    """
+    product_key = normalize_text(product_name)
+    reference_key = normalize_text(reference_name)
+
+    if not product_key or not reference_key:
+        return False
+
+    padded_product = f"_{product_key}_"
+    padded_reference = f"_{reference_key}_"
+
+    return (
+        product_key == reference_key
+        or padded_reference in padded_product
+        or product_key.startswith(f"{reference_key}_")
+    )
+
+
+def classify_controlled_prescription_product(
+    product_name: Any,
+) -> str | None:
+    for prescription_type, reference_names in (
+        CONTROLLED_PRESCRIPTION_REFERENCE.items()
+    ):
+        for reference_name in reference_names:
+            if _product_matches_reference(
+                product_name,
+                reference_name,
+            ):
+                return prescription_type
+
+    return None
+
+
+def _build_reference_prescription_metrics(
     products: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    """
+    Ürün Bazında Toplamlar dosyasını referans sözlükle eşleştirir.
+
+    Buradaki count "eşleşen farklı ürün sayısıdır"; reçete adedi değildir.
+    quantity ise varsa Satılan Adet toplamıdır.
+    """
+    controlled_types = [
+        "Kırmızı Reçete",
+        "Yeşil Reçete",
+        "Mor Reçete",
+        "Turuncu Reçete",
+    ]
+
+    empty_records = [
+        {
+            "prescription_type": prescription_type,
+            "count": 0,
+            "product_count": 0,
+            "quantity": 0,
+            "turnover": 0.0,
+            "alert_count": 0,
+            "metric_basis": "product_reference",
+            "source": "AYÇA kontrollü reçete ürün referansı",
+        }
+        for prescription_type in controlled_types
+    ]
+
+    if products is None or products.empty:
+        return empty_records
+
+    product_column = find_column(
+        products,
+        [
+            "ürün adı",
+            "urun adi",
+            "ürün",
+            "urun",
+            "ilaç adı",
+            "ilac adi",
+            "malzeme adı",
+            "malzeme adi",
+        ],
+    )
+
+    if not product_column:
+        return empty_records
+
+    quantity_column = find_column(
+        products,
+        [
+            "satılan adet",
+            "satilan adet",
+            "satış adedi",
+            "satis adedi",
+            "adet",
+            "miktar",
+        ],
+    )
+
+    turnover_column = find_column(
+        products,
+        [
+            "satış tutarı",
+            "satis tutari",
+            "ciro",
+            "toplam tutar",
+            "net tutar",
+            "tutar",
+        ],
+    )
+
+    working = products.copy()
+    working["_reference_product_name"] = text_series(
+        working,
+        product_column,
+    )
+    working["_reference_prescription_type"] = working[
+        "_reference_product_name"
+    ].apply(classify_controlled_prescription_product)
+
+    working["_reference_quantity"] = numeric_series(
+        working,
+        quantity_column,
+        0,
+    )
+    working["_reference_turnover"] = numeric_series(
+        working,
+        turnover_column,
+        0,
+    )
+
+    records: list[dict[str, Any]] = []
+
+    for prescription_type in controlled_types:
+        subset = working[
+            working["_reference_prescription_type"]
+            == prescription_type
+        ].copy()
+
+        product_count = int(
+            subset["_reference_product_name"]
+            .replace("", pd.NA)
+            .dropna()
+            .map(normalize_text)
+            .nunique()
+        )
+
+        quantity = safe_int(
+            subset["_reference_quantity"].sum()
+        )
+        turnover = safe_float(
+            subset["_reference_turnover"].sum()
+        )
+
+        records.append(
+            {
+                "prescription_type": prescription_type,
+                "count": product_count,
+                "product_count": product_count,
+                "quantity": quantity,
+                "turnover": turnover,
+                "alert_count": product_count,
+                "metric_basis": "product_reference",
+                "source": "AYÇA kontrollü reçete ürün referansı",
+            }
+        )
+
+    return records
+
+
+def _build_direct_prescription_metrics(
+    sales: pd.DataFrame,
     prescription_type_column: str | None,
     prescription_no_column: str | None,
 ) -> list[dict[str, Any]]:
+    """
+    Satış hareketlerinde doğrudan reçete türü / risk türü varsa onu kullanır.
+    Tür kolonu yoksa bütün satışları Normal Reçete saymaz.
+    """
     working = sales.copy()
 
-    working["_prescription_label"] = working[
-        "_prescription_type"
-    ].apply(normalize_prescription_type)
+    has_direct_type = bool(
+        prescription_type_column
+        and working["_prescription_type"]
+        .replace("", pd.NA)
+        .notna()
+        .any()
+    )
 
-    if working["_risk_type"].ne("").any():
+    has_risk_type = bool(
+        working["_risk_type"]
+        .replace("", pd.NA)
+        .notna()
+        .any()
+    )
+
+    if not has_direct_type and not has_risk_type:
+        return []
+
+    working["_prescription_label"] = ""
+
+    if has_direct_type:
+        working["_prescription_label"] = working[
+            "_prescription_type"
+        ].apply(normalize_prescription_type)
+
+    if has_risk_type:
         risk_mask = working["_risk_type"].ne("")
-
         working.loc[
             risk_mask,
             "_prescription_label",
@@ -760,6 +1142,10 @@ def build_prescription_metrics(
             risk_mask,
             "_risk_type",
         ].apply(normalize_prescription_type)
+
+    working = working[
+        working["_prescription_label"].ne("")
+    ].copy()
 
     records: list[dict[str, Any]] = []
 
@@ -774,7 +1160,9 @@ def build_prescription_metrics(
             else len(group)
         )
 
-        normalized_type = normalize_text(prescription_type)
+        normalized_type = normalize_text(
+            prescription_type
+        )
 
         alert_count = (
             safe_int(count)
@@ -794,19 +1182,137 @@ def build_prescription_metrics(
 
         records.append(
             {
-                "prescription_type": str(prescription_type),
+                "prescription_type": str(
+                    prescription_type
+                ),
                 "count": safe_int(count),
-                "turnover": safe_float(group["_turnover"].sum()),
+                "product_count": None,
+                "quantity": None,
+                "turnover": safe_float(
+                    group["_turnover"].sum()
+                ),
                 "alert_count": alert_count,
+                "metric_basis": "direct_prescription",
+                "source": "Satış hareketleri reçete türü",
             }
         )
 
-    return sorted(
-        records,
-        key=lambda item: item["count"],
-        reverse=True,
+    return records
+
+
+def build_prescription_metrics(
+    sales: pd.DataFrame,
+    products: pd.DataFrame,
+    prescription_type_column: str | None,
+    prescription_no_column: str | None,
+) -> list[dict[str, Any]]:
+    """
+    Öncelik:
+      1) Satış hareketlerinde gerçek reçete türü varsa doğrudan kullan.
+      2) Kontrollü renkler için ürün bazında referans eşleşmesini kullan.
+      3) Reçete türü kolonu yoksa tüm satışları 'Normal Reçete' kabul etme.
+
+    Böylece Kırmızı/Yeşil/Mor/Turuncu kartları 3 Excel'in birleşik
+    bilgisinden üretilebilirken sahte Normal Reçete sayısı oluşmaz.
+    """
+    direct_records = _build_direct_prescription_metrics(
+        sales=sales,
+        prescription_type_column=prescription_type_column,
+        prescription_no_column=prescription_no_column,
     )
 
+    reference_records = (
+        _build_reference_prescription_metrics(
+            products=products,
+        )
+    )
+
+    direct_by_type = {
+        normalize_prescription_type(
+            item["prescription_type"]
+        ): item
+        for item in direct_records
+        if normalize_prescription_type(
+            item["prescription_type"]
+        )
+    }
+
+    reference_by_type = {
+        item["prescription_type"]: item
+        for item in reference_records
+    }
+
+    final_records: list[dict[str, Any]] = []
+
+    # Normal reçete yalnızca kaynak dosyada doğrudan tür bilgisi
+    # varsa güvenilir biçimde gösterilir.
+    normal_record = direct_by_type.get(
+        "Normal Reçete"
+    )
+    if normal_record is not None:
+        final_records.append(normal_record)
+
+    controlled_types = [
+        "Kırmızı Reçete",
+        "Yeşil Reçete",
+        "Mor Reçete",
+        "Turuncu Reçete",
+    ]
+
+    for prescription_type in controlled_types:
+        direct_record = direct_by_type.get(
+            prescription_type
+        )
+
+        # Doğrudan reçete türü verisi varsa en yüksek güvenilirlik odur.
+        if (
+            direct_record is not None
+            and safe_int(direct_record.get("count")) > 0
+        ):
+            final_records.append(direct_record)
+            continue
+
+        final_records.append(
+            reference_by_type.get(
+                prescription_type,
+                {
+                    "prescription_type": prescription_type,
+                    "count": 0,
+                    "product_count": 0,
+                    "quantity": 0,
+                    "turnover": 0.0,
+                    "alert_count": 0,
+                    "metric_basis": "product_reference",
+                    "source": (
+                        "AYÇA kontrollü reçete ürün referansı"
+                    ),
+                },
+            )
+        )
+
+    # Kontrollü/Kkİ gibi doğrudan gelen ve dört temel renkten biri
+    # olmayan ek sinyalleri de kaybetme.
+    known_types = {
+        "Normal Reçete",
+        *controlled_types,
+    }
+
+    for item in direct_records:
+        item_type = normalize_prescription_type(
+            item["prescription_type"]
+        )
+        if item_type not in known_types:
+            final_records.append(item)
+
+    return sorted(
+        final_records,
+        key=lambda item: (
+            item["prescription_type"]
+            != "Normal Reçete",
+            item["count"],
+        ),
+        reverse=True,
+    )
 
 def empty_patient_metrics(
     message: str,

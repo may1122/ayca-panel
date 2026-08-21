@@ -1,4 +1,6 @@
 import math
+import re
+import unicodedata
 from datetime import date
 
 import pandas as pd
@@ -7,14 +9,315 @@ from app.services.data_quality import (
     estimate_period_days,
     find_first_column,
     normalize_barcode,
+    normalize_text,
     parse_date_series,
     to_number,
 )
 
 
+EXPIRY_COLUMN_CANDIDATES = [
+    "Miad Tarihi",
+    "Miat Tarihi",
+    "Miad",
+    "Miat",
+    "SKT",
+    "S.K.T",
+    "S.K.T.",
+    "SKT Tarihi",
+    "Skt Tarihi",
+    "Son Kullanma Tarihi",
+    "Son Kullanım Tarihi",
+    "Son Kullanma",
+    "Son Kullanım",
+    "Son Kull. Tarihi",
+    "Son Kul. Tarihi",
+    "Expiry Date",
+    "Expiration Date",
+    "Expiry",
+]
+
+
+def _normalize_column_name(value: object) -> str:
+    text = str(value or "").strip().casefold()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(
+        character
+        for character in text
+        if not unicodedata.combining(character)
+    )
+
+    text = text.translate(
+        str.maketrans(
+            {
+                "ı": "i",
+                "ş": "s",
+                "ğ": "g",
+                "ü": "u",
+                "ö": "o",
+                "ç": "c",
+            }
+        )
+    )
+
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def _find_expiry_column(df: pd.DataFrame | None) -> str | None:
+    if df is None or df.empty:
+        return None
+
+    exact_match = find_first_column(
+        df,
+        EXPIRY_COLUMN_CANDIDATES,
+    )
+
+    if exact_match is not None:
+        return exact_match
+
+    normalized_columns = {
+        column: _normalize_column_name(column)
+        for column in df.columns
+    }
+
+    normalized_candidates = {
+        _normalize_column_name(candidate)
+        for candidate in EXPIRY_COLUMN_CANDIDATES
+    }
+
+    for column, normalized in normalized_columns.items():
+        if normalized in normalized_candidates:
+            return column
+
+    expiry_tokens = (
+        "miad",
+        "miat",
+        "skt",
+        "sonkullanma",
+        "sonkullanim",
+        "expiry",
+        "expiration",
+    )
+
+    for column, normalized in normalized_columns.items():
+        if any(token in normalized for token in expiry_tokens):
+            return column
+
+    return None
+
+
+def _parse_expiry_series(series: pd.Series) -> pd.Series:
+    parsed = parse_date_series(series)
+
+    if parsed.notna().all():
+        return parsed
+
+    numeric = pd.to_numeric(
+        series,
+        errors="coerce",
+    )
+
+    excel_mask = (
+        parsed.isna()
+        & numeric.notna()
+        & numeric.between(20000, 80000)
+    )
+
+    if excel_mask.any():
+        parsed.loc[excel_mask] = pd.to_datetime(
+            numeric.loc[excel_mask],
+            unit="D",
+            origin="1899-12-30",
+            errors="coerce",
+        )
+
+    return parsed
+
+
+def _prepare_expiry_source(
+    source_df: pd.DataFrame | None,
+) -> tuple[pd.DataFrame | None, str | None, str | None]:
+    """
+    Kaynak dosyada miad kolonunu bulur ve eşleştirme için
+    barkod veya ürün adı anahtarı hazırlar.
+
+    Returns:
+        prepared_source,
+        match_key_type ("barcode" | "name" | None),
+        expiry_column
+    """
+    if source_df is None or source_df.empty:
+        return None, None, None
+
+    expiry_column = _find_expiry_column(source_df)
+
+    if expiry_column is None:
+        return None, None, None
+
+    source = source_df.copy()
+    source["_source_expiry"] = _parse_expiry_series(
+        source[expiry_column]
+    )
+
+    source = source[
+        source["_source_expiry"].notna()
+    ].copy()
+
+    if source.empty:
+        return None, None, expiry_column
+
+    barcode_column = find_first_column(
+        source,
+        ["Barkod", "Barkod No", "Ürün Barkodu"],
+    )
+
+    if barcode_column is not None:
+        source["_match_key"] = normalize_barcode(
+            source[barcode_column]
+        )
+
+        source = source[
+            source["_match_key"] != ""
+        ].copy()
+
+        if not source.empty:
+            source = (
+                source.sort_values("_source_expiry")
+                .drop_duplicates(
+                    subset=["_match_key"],
+                    keep="last",
+                )
+            )
+            return (
+                source[["_match_key", "_source_expiry"]],
+                "barcode",
+                expiry_column,
+            )
+
+    name_column = find_first_column(
+        source,
+        [
+            "Ürün Adı",
+            "Ürün",
+            "İlaç Adı",
+            "Malzeme Adı",
+        ],
+    )
+
+    if name_column is not None:
+        source["_match_key"] = (
+            source[name_column]
+            .fillna("")
+            .astype(str)
+            .map(
+                lambda value: normalize_text(
+                    value
+                ).casefold()
+            )
+        )
+
+        source = source[
+            source["_match_key"] != ""
+        ].copy()
+
+        if not source.empty:
+            source = (
+                source.sort_values("_source_expiry")
+                .drop_duplicates(
+                    subset=["_match_key"],
+                    keep="last",
+                )
+            )
+            return (
+                source[["_match_key", "_source_expiry"]],
+                "name",
+                expiry_column,
+            )
+
+    return None, None, expiry_column
+
+
+def _merge_expiry_from_source(
+    inventory_df: pd.DataFrame,
+    source_df: pd.DataFrame | None,
+) -> tuple[pd.DataFrame, dict]:
+    """
+    Kaynak dosyadaki miad bilgisini envantere taşır.
+    Öncelik barkod, fallback ürün adıdır.
+    """
+    inventory = inventory_df.copy()
+
+    source, match_type, expiry_column = (
+        _prepare_expiry_source(source_df)
+    )
+
+    metadata = {
+        "found": False,
+        "match_type": match_type,
+        "expiry_column": expiry_column,
+        "matched_count": 0,
+    }
+
+    if source is None or match_type is None:
+        return inventory, metadata
+
+    if match_type == "barcode":
+        inventory_barcode_column = find_first_column(
+            inventory,
+            ["Barkod", "Barkod No", "Ürün Barkodu"],
+        )
+
+        if inventory_barcode_column is None:
+            return inventory, metadata
+
+        inventory["_match_key"] = normalize_barcode(
+            inventory[inventory_barcode_column]
+        )
+
+    else:
+        inventory_name_column = find_first_column(
+            inventory,
+            [
+                "Ürün Adı",
+                "Ürün",
+                "İlaç Adı",
+                "Malzeme Adı",
+            ],
+        )
+
+        if inventory_name_column is None:
+            return inventory, metadata
+
+        inventory["_match_key"] = (
+            inventory[inventory_name_column]
+            .fillna("")
+            .astype(str)
+            .map(
+                lambda value: normalize_text(
+                    value
+                ).casefold()
+            )
+        )
+
+    inventory = inventory.merge(
+        source,
+        on="_match_key",
+        how="left",
+    )
+
+    matched_count = int(
+        inventory["_source_expiry"].notna().sum()
+    )
+
+    metadata["found"] = matched_count > 0
+    metadata["matched_count"] = matched_count
+
+    return inventory, metadata
+
+
 def build_inventory_intelligence(
     inventory_df: pd.DataFrame,
     product_df: pd.DataFrame | None = None,
+    period_df: pd.DataFrame | None = None,
     target_stock_days: int = 30,
     critical_days: int = 5,
     warning_days: int = 15,
@@ -41,9 +344,6 @@ def build_inventory_intelligence(
         ["Kritik Stok", "Minimum Stok", "Min Stok"],
     )
 
-    # Bu kolon şimdilik mevcut davranışı korumak için bırakıldı.
-    # Sipariş maliyeti hesabında alış/satış fiyatı ayrımını sonraki adımda
-    # ayrıca kesinleştireceğiz.
     price_column = find_first_column(
         inventory,
         ["Psf", "PSF", "Satış Fiyatı", "Alış Fiyatı"],
@@ -95,8 +395,16 @@ def build_inventory_intelligence(
 
     out["sold_quantity"] = 0.0
 
+    # Analiz döneminin resmi kaynağı mümkünse satış hareketleridir.
+    # Ürün bazında toplamlar çoğu zaman tarih kolonu içermez.
+    period_source_df = (
+        period_df
+        if period_df is not None and not period_df.empty
+        else product_df
+    )
+
     period_days, _period_assumed = estimate_period_days(
-        product_df,
+        period_source_df,
         default_days=30,
     )
 
@@ -128,7 +436,6 @@ def build_inventory_intelligence(
             )
             product["_sold"] = to_number(product[sold_column])
 
-            # Boş barkodların birbirleriyle yanlış eşleşmesini engelle.
             product = product[product["_barcode"] != ""]
 
             summary = (
@@ -206,12 +513,18 @@ def build_inventory_intelligence(
 
 def calculate_expiry_metrics(
     inventory_df: pd.DataFrame,
+    product_df: pd.DataFrame | None = None,
+    sales_df: pd.DataFrame | None = None,
     warning_days: int = 90,
 ):
     if inventory_df is None or inventory_df.empty:
         return {
             "success": False,
             "error": "Envanter dosyası boş veya bulunamadı.",
+            "expiry_source": None,
+            "expiry_column": None,
+            "matched_expiry_count": 0,
+            "warning_days": warning_days,
             "warning_count": 0,
             "expired_count": 0,
             "risk_stock_value": 0,
@@ -221,22 +534,100 @@ def calculate_expiry_metrics(
 
     df = inventory_df.copy()
 
-    expiry_column = find_first_column(
-        df,
-        [
-            "Miad Tarihi",
-            "Miat Tarihi",
-            "SKT",
-            "Son Kullanma Tarihi",
-            "Son Kullanım Tarihi",
-            "Miad",
-        ],
-    )
+    inventory_expiry_column = _find_expiry_column(df)
 
-    if expiry_column is None:
+    expiry_source = None
+    expiry_column = None
+    matched_expiry_count = 0
+    match_type = None
+
+    if inventory_expiry_column is not None:
+        df["_expiry"] = _parse_expiry_series(
+            df[inventory_expiry_column]
+        )
+        expiry_source = "inventory"
+        expiry_column = inventory_expiry_column
+        matched_expiry_count = int(
+            df["_expiry"].notna().sum()
+        )
+    else:
+        df, product_metadata = _merge_expiry_from_source(
+            inventory_df=df,
+            source_df=product_df,
+        )
+
+        if product_metadata["found"]:
+            df["_expiry"] = df["_source_expiry"]
+            expiry_source = "product_sales"
+            expiry_column = product_metadata[
+                "expiry_column"
+            ]
+            matched_expiry_count = product_metadata[
+                "matched_count"
+            ]
+            match_type = product_metadata[
+                "match_type"
+            ]
+        else:
+            df = df.drop(
+                columns=[
+                    "_match_key",
+                    "_source_expiry",
+                ],
+                errors="ignore",
+            )
+
+            df, sales_metadata = _merge_expiry_from_source(
+                inventory_df=df,
+                source_df=sales_df,
+            )
+
+            if sales_metadata["found"]:
+                df["_expiry"] = df["_source_expiry"]
+                expiry_source = "sales"
+                expiry_column = sales_metadata[
+                    "expiry_column"
+                ]
+                matched_expiry_count = sales_metadata[
+                    "matched_count"
+                ]
+                match_type = sales_metadata[
+                    "match_type"
+                ]
+
+    if "_expiry" not in df.columns:
         return {
             "success": False,
-            "error": "Envanter dosyasında miad/SKT kolonu bulunamadı.",
+            "error": (
+                "Miad/SKT bilgisi Envanter, Ürün Satış ve "
+                "Satış dosyalarında bulunamadı veya envanterle "
+                "eşleştirilemedi."
+            ),
+            "expiry_source": None,
+            "expiry_column": None,
+            "match_type": None,
+            "matched_expiry_count": 0,
+            "inventory_columns": [
+                str(column)
+                for column in inventory_df.columns
+            ],
+            "product_columns": (
+                [
+                    str(column)
+                    for column in product_df.columns
+                ]
+                if product_df is not None
+                else []
+            ),
+            "sales_columns": (
+                [
+                    str(column)
+                    for column in sales_df.columns
+                ]
+                if sales_df is not None
+                else []
+            ),
+            "warning_days": warning_days,
             "warning_count": 0,
             "expired_count": 0,
             "risk_stock_value": 0,
@@ -246,16 +637,36 @@ def calculate_expiry_metrics(
 
     name_column = find_first_column(
         df,
-        ["Ürün Adı", "Ürün", "İlaç Adı"],
+        [
+            "Ürün Adı",
+            "Ürün",
+            "İlaç Adı",
+            "Malzeme Adı",
+        ],
     )
+
     stock_column = find_first_column(
         df,
-        ["Stok", "Mevcut Stok", "Stok Adedi"],
+        [
+            "Stok",
+            "Mevcut Stok",
+            "Stok Adedi",
+            "Kalan Stok",
+        ],
     )
+
     price_column = find_first_column(
         df,
-        ["Psf", "PSF", "Satış Fiyatı", "Alış Fiyatı"],
+        [
+            "Alış Fiyatı",
+            "Net Alış Fiyatı",
+            "Maliyet",
+            "Psf",
+            "PSF",
+            "Satış Fiyatı",
+        ],
     )
+
     stock_value_column = find_first_column(
         df,
         [
@@ -265,16 +676,33 @@ def calculate_expiry_metrics(
             "Stok Değeri",
         ],
     )
+
     supplier_column = find_first_column(
         df,
-        ["Tedarikçi", "Tedarikci", "Firma"],
-    )
-    shelf_column = find_first_column(
-        df,
-        ["Raf Lokasyonu", "Raf", "Lokasyon"],
+        [
+            "Tedarikçi",
+            "Tedarikci",
+            "Firma",
+        ],
     )
 
-    df["_expiry"] = parse_date_series(df[expiry_column])
+    shelf_column = find_first_column(
+        df,
+        [
+            "Raf Lokasyonu",
+            "Raf",
+            "Lokasyon",
+        ],
+    )
+
+    category_column = find_first_column(
+        df,
+        [
+            "Kategori",
+            "Ürün Kategorisi",
+            "Kategori Adı",
+        ],
+    )
 
     df["_stock"] = (
         to_number(df[stock_column])
@@ -294,22 +722,37 @@ def calculate_expiry_metrics(
         else df["_stock"] * df["_price"]
     )
 
-    today = pd.Timestamp(date.today())
-    df["_days"] = (df["_expiry"] - today).dt.days
+    today = pd.Timestamp(date.today()).normalize()
 
-    active = df[
+    df["_days"] = (
+        df["_expiry"] - today
+    ).dt.days
+
+    valid_expiry = df[
         df["_expiry"].notna()
-        & (df["_days"] <= warning_days)
     ].copy()
 
-    expired = active[active["_days"] < 0]
-    warning = active[active["_days"] >= 0]
+    active_stock = valid_expiry[
+        valid_expiry["_stock"] > 0
+    ].copy()
+
+    active = active_stock[
+        active_stock["_days"] <= warning_days
+    ].copy()
+
+    expired = active[
+        active["_days"] < 0
+    ].copy()
+
+    warning = active[
+        active["_days"] >= 0
+    ].copy()
 
     products = []
 
     for _, row in (
         active.sort_values("_days")
-        .head(50)
+        .head(100)
         .iterrows()
     ):
         days = int(row["_days"])
@@ -321,11 +764,19 @@ def calculate_expiry_metrics(
                     if name_column is not None
                     else "Bilinmeyen Ürün"
                 ),
+                "category": (
+                    str(row[category_column]).strip()
+                    if category_column is not None
+                    else "-"
+                ),
                 "expiry_date": row["_expiry"].strftime(
                     "%Y-%m-%d"
                 ),
                 "days_left": days,
-                "stock": float(row["_stock"]),
+                "stock": round(
+                    float(row["_stock"]),
+                    2,
+                ),
                 "stock_value": round(
                     float(row["_stock_value"]),
                     2,
@@ -356,15 +807,39 @@ def calculate_expiry_metrics(
         else None
     )
 
+    warnings = []
+
+    if expiry_source != "inventory":
+        warnings.append(
+            "Miad bilgisi envanter dosyasında bulunamadığı için "
+            f"{expiry_source} dosyasından {match_type} ile eşleştirildi."
+        )
+
     return {
         "success": True,
+        "expiry_source": expiry_source,
+        "expiry_column": expiry_column,
+        "match_type": match_type,
+        "matched_expiry_count": matched_expiry_count,
+        "valid_expiry_count": int(
+            len(valid_expiry)
+        ),
         "warning_days": warning_days,
-        "warning_count": int(len(warning)),
-        "expired_count": int(len(expired)),
+        "warning_count": int(
+            len(warning)
+        ),
+        "expired_count": int(
+            len(expired)
+        ),
         "risk_stock_value": round(
-            float(active["_stock_value"].sum()),
+            float(
+                active[
+                    "_stock_value"
+                ].sum()
+            ),
             2,
         ),
         "nearest_expiry_days": nearest,
         "products": products,
+        "warnings": warnings,
     }

@@ -53,7 +53,11 @@ def _safe_stock_days(value):
     return round(numeric, 1)
 
 
-def calculate_risk_metrics(inventory_df=None, product_df=None):
+def calculate_risk_metrics(
+    inventory_df=None,
+    product_df=None,
+    sales_df=None,
+):
     if inventory_df is None or inventory_df.empty:
         return _empty_result(
             "Envanter dosyası boş veya bulunamadı."
@@ -62,6 +66,7 @@ def calculate_risk_metrics(inventory_df=None, product_df=None):
     intelligence, period_days = build_inventory_intelligence(
         inventory_df=inventory_df,
         product_df=product_df,
+        period_df=sales_df,
         target_stock_days=30,
         critical_days=CRITICAL_STOCK_DAYS,
         warning_days=WARNING_STOCK_DAYS,
@@ -72,8 +77,14 @@ def calculate_risk_metrics(inventory_df=None, product_df=None):
             "Envanter dosyasında stok kolonu bulunamadı."
         )
 
+    period_source_df = (
+        sales_df
+        if sales_df is not None and not sales_df.empty
+        else product_df
+    )
+
     _, period_assumed = estimate_period_days(
-        product_df,
+        period_source_df,
         default_days=30,
     )
 

@@ -405,6 +405,7 @@ def _apply_capital_guard(
 def calculate_order_suggestions(
     inventory_df: pd.DataFrame,
     product_df: pd.DataFrame | None = None,
+    sales_df: pd.DataFrame | None = None,
     target_stock_days: int = 30,
     max_order_to_inventory_ratio: float = 0.35,
 ):
@@ -425,6 +426,7 @@ def calculate_order_suggestions(
         build_inventory_intelligence(
             inventory_df=inventory_df,
             product_df=product_df,
+            period_df=sales_df,
             target_stock_days=target_stock_days,
         )
     )
@@ -653,11 +655,17 @@ def calculate_order_suggestions(
 
         records.append(record)
 
+    period_source_df = (
+        sales_df
+        if sales_df is not None and not sales_df.empty
+        else product_df
+    )
+
     (
         _,
         period_assumed,
     ) = estimate_period_days(
-        product_df,
+        period_source_df,
         default_days=30,
     )
 
