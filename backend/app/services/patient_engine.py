@@ -386,11 +386,19 @@ def calculate_patient_metrics(
         transaction_no_column=transaction_no_column,
     )
 
-    patients = build_patient_metrics(
+    all_patients = build_patient_metrics(
         sales,
         patient_column=patient_column,
         transaction_no_column=transaction_no_column,
+        limit=None,
     )
+    patients = all_patients[:100]
+
+    lapsed_patients = [
+        patient
+        for patient in all_patients
+        if str(patient.get("risk_level", "")).lower() == "kritik"
+    ][:100]
 
     institutions = build_institution_metrics(
         sales,
@@ -406,15 +414,15 @@ def calculate_patient_metrics(
         prescription_no_column=prescription_no_column,
     )
 
-    active_patient_count = len(patients)
+    active_patient_count = len(all_patients)
     vip_patient_count = sum(
         1
-        for patient in patients
+        for patient in all_patients
         if str(patient.get("segment", "")).lower() == "vip"
     )
     lost_patient_risk_count = sum(
         1
-        for patient in patients
+        for patient in all_patients
         if str(patient.get("risk_level", "")).lower()
         in {"yüksek", "kritik"}
     )
@@ -486,8 +494,14 @@ def calculate_patient_metrics(
         "active_patient_count": active_patient_count,
         "vip_patient_count": vip_patient_count,
         "lost_patient_risk_count": lost_patient_risk_count,
+        "lapsed_patient_count": sum(
+            1
+            for patient in all_patients
+            if str(patient.get("risk_level", "")).lower() == "kritik"
+        ),
         "doctors": doctors,
         "patients": patients,
+        "lapsed_patients": lapsed_patients,
         "institutions": institutions,
         "prescriptions": prescriptions,
         "detected_columns": detected_columns,
@@ -563,6 +577,7 @@ def build_patient_metrics(
     sales: pd.DataFrame,
     patient_column: str | None,
     transaction_no_column: str | None,
+    limit: int | None = 100,
 ) -> list[dict[str, Any]]:
     if not patient_column:
         return []
@@ -650,14 +665,16 @@ def build_patient_metrics(
             }
         )
 
-    return sorted(
+    sorted_records = sorted(
         records,
         key=lambda item: (
             item["risk_level"] in {"Kritik", "Yüksek"},
             item["turnover"],
         ),
         reverse=True,
-    )[:100]
+    )
+
+    return sorted_records[:limit] if limit is not None else sorted_records
 
 
 def build_institution_metrics(
@@ -990,6 +1007,7 @@ def _build_reference_prescription_metrics(
             "alert_count": 0,
             "metric_basis": "product_reference",
             "source": "AYÇA kontrollü reçete ürün referansı",
+            "products": [],
         }
         for prescription_type in controlled_types
     ]
@@ -1081,6 +1099,56 @@ def _build_reference_prescription_metrics(
             subset["_reference_turnover"].sum()
         )
 
+        product_details: list[dict[str, Any]] = []
+
+        if not subset.empty:
+            detail_working = subset[
+                [
+                    "_reference_product_name",
+                    "_reference_quantity",
+                    "_reference_turnover",
+                ]
+            ].copy()
+
+            detail_working["_product_key"] = detail_working[
+                "_reference_product_name"
+            ].map(normalize_text)
+
+            for _, product_group in detail_working.groupby(
+                "_product_key",
+                sort=False,
+            ):
+                product_names = (
+                    product_group["_reference_product_name"]
+                    .replace("", pd.NA)
+                    .dropna()
+                )
+
+                if product_names.empty:
+                    continue
+
+                product_details.append(
+                    {
+                        "product_name": str(product_names.iloc[0]).strip(),
+                        "quantity": safe_int(
+                            product_group["_reference_quantity"].sum()
+                        ),
+                        "turnover": safe_float(
+                            product_group["_reference_turnover"].sum()
+                        ),
+                    }
+                )
+
+        product_details = sorted(
+            product_details,
+            key=lambda item: (
+                item["turnover"],
+                item["quantity"],
+                item["product_name"],
+            ),
+            reverse=True,
+        )
+
         records.append(
             {
                 "prescription_type": prescription_type,
@@ -1091,6 +1159,7 @@ def _build_reference_prescription_metrics(
                 "alert_count": product_count,
                 "metric_basis": "product_reference",
                 "source": "AYÇA kontrollü reçete ürün referansı",
+                "products": product_details,
             }
         )
 
@@ -1194,6 +1263,7 @@ def _build_direct_prescription_metrics(
                 "alert_count": alert_count,
                 "metric_basis": "direct_prescription",
                 "source": "Satış hareketleri reçete türü",
+                "products": [],
             }
         )
 
@@ -1286,6 +1356,7 @@ def build_prescription_metrics(
                     "source": (
                         "AYÇA kontrollü reçete ürün referansı"
                     ),
+                    "products": [],
                 },
             )
         )
@@ -1323,8 +1394,10 @@ def empty_patient_metrics(
         "active_patient_count": 0,
         "vip_patient_count": 0,
         "lost_patient_risk_count": 0,
+        "lapsed_patient_count": 0,
         "doctors": [],
         "patients": [],
+        "lapsed_patients": [],
         "institutions": [],
         "prescriptions": [],
         "detected_columns": {},
