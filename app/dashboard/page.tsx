@@ -169,6 +169,28 @@ type PrescriptionMetric = {
 type CopilotTab =
   "overview" | "stock" | "finance" | "doctor" | "patient" | "ask";
 
+type OperationTab = "stock" | "risk" | "runout" | "expiry" | "dead";
+
+type FinancePeriod = "week" | "month" | "3months" | "year" | "all";
+
+type FinancePeriodMetric = {
+  period: FinancePeriod;
+  period_label: string;
+  period_start?: string | null;
+  period_end?: string | null;
+  period_reference_date?: string | null;
+  period_filter_applied?: boolean;
+  total_turnover: number;
+  total_profit: number;
+  total_cost: number;
+  profit_margin: number;
+  transaction_count: number;
+  average_sale: number;
+  row_count?: number;
+  week_offset?: number;
+  is_latest_week?: boolean;
+};
+
 type CopilotMessage = {
   id: number;
   role: "user" | "assistant";
@@ -216,7 +238,19 @@ type AnalyzeResult = {
     transaction_count?: number;
     total_profit?: number;
     total_cost?: number;
+    total_debt?: number;
+    total_payables?: number;
+    debt_total?: number;
+    outstanding_debt?: number;
     profit_margin?: number;
+    period?: FinancePeriod;
+    period_label?: string;
+    period_start?: string | null;
+    period_end?: string | null;
+    period_reference_date?: string | null;
+    period_filter_applied?: boolean;
+    period_metrics?: Partial<Record<FinancePeriod, FinancePeriodMetric>>;
+    week_metrics?: FinancePeriodMetric[];
     daily_revenue?: FinanceDailyRevenue[];
     top_products?: FinanceProduct[];
   };
@@ -271,17 +305,19 @@ const COPILOT_URL = `${API_BASE_URL}/copilot/ask`;
 
 const modules = [
   "🏠 Dashboard",
-  "☀️ Sabah Brifingi",
-  "📦 Operasyon Merkezi",
-  "💰 Finans Merkezi",
-  "🚨 Risk Merkezi",
-  "⏱️ Stok Bitiş Tahmini",
-  "⏳ Miad Takibi",
-  "💀 Ölü Stok Analizi",
-  "👥 Hasta & Reçete Merkezi",
-  "🤖 AYÇA Copilot",
-  "📊 Raporlar",
+  "🤖 AYÇA Asistan",
+  "📦 Operasyon",
+  "💰 Finans",
+  "👥 Hasta & Reçete",
 ];
+
+const financePeriodLabels: Record<FinancePeriod, string> = {
+  week: "Bu Hafta",
+  month: "Bu Ay",
+  "3months": "Son 3 Ay",
+  year: "Bu Yıl",
+  all: "Tümü",
+};
 
 export default function DashboardPage() {
   const [company, setCompany] = useState<Company | null>(null);
@@ -289,6 +325,9 @@ export default function DashboardPage() {
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [activeModule, setActiveModule] = useState("🏠 Dashboard");
+  const [financePeriod, setFinancePeriod] = useState<FinancePeriod>("month");
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [operationTab, setOperationTab] = useState<OperationTab>("stock");
   const [patientTab, setPatientTab] = useState<
     "doctor" | "patient" | "institution" | "prescription"
   >("doctor");
@@ -344,6 +383,23 @@ export default function DashboardPage() {
   ];
 
   useEffect(() => {
+    if (financePeriod !== "week") return;
+
+    const maxOffset = Math.max(
+      (analyzeResult?.finance_metrics?.week_metrics?.length ?? 1) - 1,
+      0,
+    );
+
+    if (weekOffset > maxOffset) {
+      setWeekOffset(maxOffset);
+    }
+  }, [
+    financePeriod,
+    weekOffset,
+    analyzeResult?.finance_metrics?.week_metrics?.length,
+  ]);
+
+  useEffect(() => {
     if (!isAnalyzing) return;
 
     const progressTimer = window.setInterval(() => {
@@ -387,7 +443,16 @@ export default function DashboardPage() {
         .eq("id", userData.user.id)
         .single();
 
-      setFullName(profile?.full_name ?? "");
+      const resolvedFullName =
+        profile?.full_name?.trim() ||
+        String(
+          userData.user.user_metadata?.full_name ??
+            userData.user.user_metadata?.name ??
+            "",
+        ).trim() ||
+        (userData.user.email?.split("@")[0] ?? "");
+
+      setFullName(resolvedFullName);
 
       if (profile?.company_id) {
         setCompanyId(profile.company_id);
@@ -633,6 +698,15 @@ export default function DashboardPage() {
     });
   }
 
+  function navigateToOperation(tab: OperationTab) {
+    setOperationTab(tab);
+    setActiveModule("📦 Operasyon");
+
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
   const hasAnalysis = analyzeResult !== null;
 
   const estimatedOrderAmount =
@@ -795,12 +869,82 @@ export default function DashboardPage() {
     ).length;
   const institutionCount = institutionMetrics.length;
 
-  const totalTurnover = analyzeResult?.finance_metrics?.total_turnover ?? 0;
-  const totalProfit = analyzeResult?.finance_metrics?.total_profit ?? 0;
-  const profitMargin = analyzeResult?.finance_metrics?.profit_margin ?? 0;
-  const averageSale = analyzeResult?.finance_metrics?.average_sale ?? 0;
+  const financeMetrics = analyzeResult?.finance_metrics ?? null;
+  const financeWeekMetrics = financeMetrics?.week_metrics ?? [];
+
+  const selectedWeekMetric =
+    financePeriod === "week"
+      ? financeWeekMetrics[weekOffset] ?? null
+      : null;
+
+  const selectedFinancePeriod =
+    selectedWeekMetric ??
+    financeMetrics?.period_metrics?.[financePeriod] ??
+    null;
+
+  const totalTurnover =
+    selectedFinancePeriod?.total_turnover ??
+    financeMetrics?.total_turnover ??
+    0;
+
+  const totalProfit =
+    selectedFinancePeriod?.total_profit ??
+    financeMetrics?.total_profit ??
+    0;
+
+  const profitMargin =
+    selectedFinancePeriod?.profit_margin ??
+    financeMetrics?.profit_margin ??
+    0;
+
+  const averageSale =
+    selectedFinancePeriod?.average_sale ??
+    financeMetrics?.average_sale ??
+    0;
+
   const transactionCount =
-    analyzeResult?.finance_metrics?.transaction_count ?? 0;
+    selectedFinancePeriod?.transaction_count ??
+    financeMetrics?.transaction_count ??
+    0;
+
+  const financePeriodLabel =
+    financePeriod === "week" &&
+    selectedWeekMetric?.period_start &&
+    selectedWeekMetric?.period_end
+      ? `${new Date(
+          `${selectedWeekMetric.period_start}T00:00:00`,
+        ).toLocaleDateString("tr-TR", {
+          day: "2-digit",
+          month: "short",
+        })} – ${new Date(
+          `${selectedWeekMetric.period_end}T00:00:00`,
+        ).toLocaleDateString("tr-TR", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        })}`
+      : selectedFinancePeriod?.period_label ??
+        financePeriodLabels[financePeriod];
+
+  const financePeriodDateLabel =
+    selectedFinancePeriod?.period_start &&
+    selectedFinancePeriod?.period_end
+      ? `${selectedFinancePeriod.period_start} – ${selectedFinancePeriod.period_end}`
+      : financePeriodLabel;
+
+  const canGoToPreviousWeek =
+    financePeriod === "week" &&
+    weekOffset < financeWeekMetrics.length - 1;
+
+  const canGoToNextWeek =
+    financePeriod === "week" && weekOffset > 0;
+
+  const totalDebt =
+    financeMetrics?.total_debt ??
+    financeMetrics?.total_payables ??
+    financeMetrics?.debt_total ??
+    financeMetrics?.outstanding_debt ??
+    null;
 
   const topDoctor =
     [...doctorMetrics].sort(
@@ -838,6 +982,50 @@ export default function DashboardPage() {
       ].filter((item): item is string => Boolean(item)),
     ),
   );
+
+  function createTodayPlan() {
+    if (!analyzeResult) {
+      setCopilotTab("ask");
+      void submitCopilotQuestion("Bugün ne yapmalıyım?");
+      return;
+    }
+
+    const taskContext = [
+      criticalStockCount > 0
+        ? `${criticalStockCount} kritik stok ürünü var`
+        : null,
+      zeroStockCount > 0
+        ? `${zeroStockCount} sıfır stok ürünü var`
+        : null,
+      (overStockCount ?? 0) > 0
+        ? `${overStockCount} fazla stok ürünü var`
+        : null,
+      (expiryMetrics?.warning_count ?? 0) > 0
+        ? `${expiryMetrics?.warning_count ?? 0} miad uyarısı var`
+        : null,
+      deadStockCount > 0
+        ? `${deadStockCount} ölü stok ürünü var`
+        : null,
+      suggestionCount > 0
+        ? `${suggestionCount} sipariş önerisi var`
+        : null,
+    ]
+      .filter((item): item is string => Boolean(item))
+      .join(", ");
+
+    const prompt = [
+      "Bugünkü eczane verilerime göre bana uygulanabilir bir görev planı oluştur.",
+      "Görevleri önem sırasına koy ve her görev için ne yapacağımı kısa ve net yaz.",
+      "Görevleri mümkünse Acil / Bugün / Bekleyebilir olarak ayır.",
+      taskContext ? `Mevcut sinyaller: ${taskContext}.` : "",
+      "Sadece doğrulanmış analiz verilerimi kullan.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    setCopilotTab("ask");
+    void submitCopilotQuestion(prompt);
+  }
 
   async function submitCopilotQuestion(question?: string) {
     const finalQuestion = (question ?? copilotQuestion).trim();
@@ -915,7 +1103,7 @@ export default function DashboardPage() {
       if (!response.ok || !result.success) {
         throw new Error(
           result?.detail ??
-            "AYÇA Copilot cevap oluşturamadı.",
+            "AYÇA Asistan cevap oluşturamadı.",
         );
       }
 
@@ -1031,14 +1219,14 @@ export default function DashboardPage() {
       const message =
         error instanceof Error
           ? error.message
-          : "AYÇA Copilot ile bağlantı kurulamadı.";
+          : "AYÇA Asistan ile bağlantı kurulamadı.";
 
       setCopilotMessages((currentMessages) => [
         ...currentMessages,
         {
           id: Date.now(),
           role: "assistant",
-          text: `Copilot hatası: ${message}`,
+          text: `Asistan hatası: ${message}`,
         },
       ]);
     }
@@ -1078,67 +1266,108 @@ export default function DashboardPage() {
         <header className="insight-header">
           <div>
             <span className="eyebrow">AYÇA Insight Platform</span>
-            <h1>Günaydın, {fullName?.split(" ")[0] || "Hoş geldiniz"} 👋</h1>
+            <h1>Günaydın, {fullName?.trim() || "Hoş geldiniz"} 👋</h1>
             <p>
               {company?.name ?? "İdil Eczanesi"} · {email}
             </p>
           </div>
 
           <div className="header-actions">
-            <select>
-              <option>Son 30 Gün</option>
-              <option>Son 90 Gün</option>
-              <option>Bu Yıl</option>
+            <select
+              value={financePeriod}
+              onChange={(event) => {
+                const nextPeriod =
+                  event.target.value as FinancePeriod;
+                setFinancePeriod(nextPeriod);
+                setWeekOffset(0);
+              }}
+              aria-label="Finans dönemi"
+              title="Ciro ve kâr dönemini seç"
+            >
+              <option value="week">Bu Hafta</option>
+              <option value="month">Bu Ay</option>
+              <option value="3months">Son 3 Ay</option>
+              <option value="year">Bu Yıl</option>
+              <option value="all">Tümü</option>
             </select>
+
+            {financePeriod === "week" && (
+              <div
+                aria-label="Hafta seçimi"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setWeekOffset((current) =>
+                      Math.min(
+                        current + 1,
+                        Math.max(financeWeekMetrics.length - 1, 0),
+                      ),
+                    )
+                  }
+                  disabled={!canGoToPreviousWeek}
+                  title="Önceki hafta"
+                >
+                  ←
+                </button>
+
+                <span
+                  title={financePeriodDateLabel}
+                  style={{
+                    minWidth: 148,
+                    textAlign: "center",
+                    fontSize: 12,
+                    fontWeight: 800,
+                  }}
+                >
+                  {financePeriodLabel}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setWeekOffset((current) =>
+                      Math.max(current - 1, 0),
+                    )
+                  }
+                  disabled={!canGoToNextWeek}
+                  title="Sonraki hafta"
+                >
+                  →
+                </button>
+              </div>
+            )}
+
             <span className="avatar">A</span>
           </div>
         </header>
 
-        <section className="module-tabs">
-          {modules.map((item) => (
-            <button
-              key={item}
-              className={activeModule === item ? "active" : ""}
-              onClick={() => setActiveModule(item)}
-            >
-              {item}
-            </button>
-          ))}
-        </section>
+{activeModule !== "🤖 AYÇA Asistan" && (
+          <section
+            key={activeModule}
+            className="active-module-title ayca-module-heading-enter"
+          >
+            <h2>{activeModule}</h2>
+            <p>
+              {activeModule === "🏠 Dashboard"
+                ? "Eczanenizin genel durumunu, bugünün önceliklerini ve analiz özetini tek ekranda görün."
+                : activeModule === "📦 Operasyon"
+                  ? "Sipariş, risk, stok bitişi, miad ve ölü stok kararlarını tek çalışma alanında yönetin."
+                  : activeModule === "💰 Finans"
+                    ? "Ciro, kâr, marj, sermaye ve finansal performansı tek merkezden izleyin."
+                    : "Hasta, doktor, kurum ve reçete ilişkilerini tek merkezde yönetin."}
+            </p>
+          </section>
+        )}
 
-        <section
-          key={activeModule}
-          className="active-module-title ayca-module-heading-enter"
-        >
-          <h2>{activeModule}</h2>
-          <p>
-            {activeModule === "🏠 Dashboard"
-              ? "Eczanenizin genel sağlık durumu, veri yükleme ve son analiz özeti."
-              : activeModule === "☀️ Sabah Brifingi"
-                ? "Günün başlangıcında eczanenizin hızlı karar özetini görün."
-                : activeModule === "📦 Operasyon Merkezi"
-                  ? "Stok durumunu ve sipariş önerilerini tek ekranda inceleyin."
-                  : activeModule === "💰 Finans Merkezi"
-                    ? "Ciro, işlem hacmi, ortalama sepet ve finansal performansı tek ekranda inceleyin."
-                    : activeModule === "🚨 Risk Merkezi"
-                      ? "Kritik stok, sıfır stok, fazla stok ve kayıp kâr risklerini tek ekranda yönetin."
-                      : activeModule === "⏱️ Stok Bitiş Tahmini"
-                        ? "Satış hızına göre mevcut stokların tahmini kaç gün yeteceğini ve yakın bitiş risklerini görün."
-                        : activeModule === "⏳ Miad Takibi"
-                          ? "Kaynak verideki miad/SKT bilgilerine göre yaklaşan ve geçmiş son kullanma tarihlerini takip edin."
-                          : activeModule === "💀 Ölü Stok Analizi"
-                            ? "Hareketsiz veya düşük hareketli stoklarda bağlı sermayeyi ve önerilen aksiyonları inceleyin."
-                            : activeModule === "👥 Hasta & Reçete Merkezi"
-                              ? "Hasta sadakati, doktor katkısı, kurum performansı ve kontrollü reçete süreçlerini yönetin."
-                              : activeModule === "🤖 AYÇA Copilot"
-                                ? "Stok, finans, risk, doktor ve hasta verilerinizi tek bir yönetim danışmanıyla yorumlayın."
-                                : activeModule === "📊 Raporlar"
-                                  ? "Analiz sonuçlarını özetleyin ve Excel raporunu indirerek detaylı çıktıları dışa aktarın."
-                                  : "AYÇA Insight analiz modülü."}
-          </p>
-        </section>
-
-        {!hasAnalysis && activeModule !== "🏠 Dashboard" ? (
+        {!hasAnalysis &&
+        activeModule !== "🏠 Dashboard" &&
+        activeModule !== "🤖 AYÇA Asistan" ? (
           <section className="insight-card">
             <h2>Analiz bekleniyor</h2>
             <p>
@@ -1175,8 +1404,8 @@ export default function DashboardPage() {
               <button
                 type="button"
                 className="hero-score-card dashboard-navigation-card"
-                onClick={() => navigateToModule("☀️ Sabah Brifingi")}
-                aria-label="Sabah Brifingi modülünü aç"
+                onClick={() => navigateToModule("🤖 AYÇA Asistan")}
+                aria-label="AYÇA Asistanı aç"
               >
                 <span>Eczane Sağlık Skoru</span>
                 <strong>
@@ -1194,7 +1423,7 @@ export default function DashboardPage() {
                     }}
                   />
                 </div>
-                <em className="navigation-hint">Brifingi aç →</em>
+                <em className="navigation-hint">AYÇA’ya sor →</em>
               </button>
             </section>
 
@@ -1202,7 +1431,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 className="insight-kpi kpi-blue dashboard-navigation-card"
-                onClick={() => navigateToModule("🚨 Risk Merkezi")}
+                onClick={() => navigateToOperation("risk")}
               >
                 <b>⚠️</b>
                 <span>Risk Skoru</span>
@@ -1213,7 +1442,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 className="insight-kpi kpi-red dashboard-navigation-card"
-                onClick={() => navigateToModule("📦 Operasyon Merkezi")}
+                onClick={() => navigateToOperation("stock")}
               >
                 <b>📦</b>
                 <span>Kritik Stok</span>
@@ -1224,18 +1453,18 @@ export default function DashboardPage() {
               <button
                 type="button"
                 className="insight-kpi kpi-orange dashboard-navigation-card"
-                onClick={() => navigateToModule("📊 Raporlar")}
+                onClick={() => navigateToModule("🤖 AYÇA Asistan")}
               >
                 <b>🧪</b>
                 <span>Veri Güveni</span>
                 <strong>{hasAnalysis ? `%${analysisConfidenceScore}` : "-"}</strong>
                 <p>Analiz motorlarının doğrulama oranı</p>
-                <em className="navigation-hint">Detayları incele →</em>
+                <em className="navigation-hint">AYÇA’ya sor →</em>
               </button>
               <button
                 type="button"
                 className="insight-kpi kpi-green dashboard-navigation-card"
-                onClick={() => navigateToModule("📦 Operasyon Merkezi")}
+                onClick={() => navigateToOperation("stock")}
               >
                 <b>🛒</b>
                 <span>Sipariş Bütçesi</span>
@@ -1250,7 +1479,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 className="insight-kpi kpi-purple dashboard-navigation-card"
-                onClick={() => navigateToModule("🤖 AYÇA Copilot")}
+                onClick={() => navigateToModule("🤖 AYÇA Asistan")}
               >
                 <b>🤖</b>
                 <span>AYÇA Önerileri</span>
@@ -1258,7 +1487,64 @@ export default function DashboardPage() {
                   {suggestionCount}
                 </strong>
                 <p>Karar destek aksiyonu</p>
-                <em className="navigation-hint">Copilot'u aç →</em>
+                <em className="navigation-hint">Asistanı aç →</em>
+              </button>
+            </section>
+
+            <section
+              className="insight-kpi-grid dashboard-finance-kpis"
+              style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+            >
+              <button
+                type="button"
+                className="insight-kpi dashboard-navigation-card"
+                onClick={() => navigateToModule("💰 Finans")}
+              >
+                <b>💵</b>
+                <span>Ciro</span>
+                <strong>
+                  {hasAnalysis
+                    ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
+                    : "-"}
+                </strong>
+                <p>{financePeriodLabel} toplam satış</p>
+                <em className="navigation-hint">Finansı aç →</em>
+              </button>
+
+              <button
+                type="button"
+                className="insight-kpi dashboard-navigation-card"
+                onClick={() => navigateToModule("💰 Finans")}
+              >
+                <b>📈</b>
+                <span>Net Kâr</span>
+                <strong>
+                  {hasAnalysis
+                    ? `${totalProfit.toLocaleString("tr-TR")} ₺`
+                    : "-"}
+                </strong>
+                <p>{financePeriodLabel} doğrulanmış kâr</p>
+                <em className="navigation-hint">Finansı aç →</em>
+              </button>
+
+              <button
+                type="button"
+                className="insight-kpi dashboard-navigation-card"
+                onClick={() => navigateToModule("💰 Finans")}
+              >
+                <b>🧾</b>
+                <span>Borçlar</span>
+                <strong>
+                  {totalDebt != null
+                    ? `${totalDebt.toLocaleString("tr-TR")} ₺`
+                    : "-"}
+                </strong>
+                <p>
+                  {totalDebt != null
+                    ? "Mevcut açık borç / ödeme yükümlülüğü"
+                    : "Borç verisi analiz sonucunda bulunamadı"}
+                </p>
+                <em className="navigation-hint">Finansı aç →</em>
               </button>
             </section>
 
@@ -1269,8 +1555,8 @@ export default function DashboardPage() {
                     <span>BUGÜNÜN ÖNCELİKLERİ</span>
                     <h2>AYÇA Ne Yapmalı Diyor?</h2>
                   </div>
-                  <button onClick={() => navigateToModule("☀️ Sabah Brifingi")}>
-                    Tüm brifingi aç →
+                  <button onClick={() => navigateToModule("🤖 AYÇA Asistan")}>
+                    AYÇA’ya sor →
                   </button>
                 </div>
                 <div className="priority-list">
@@ -1398,6 +1684,14 @@ export default function DashboardPage() {
                 >
                   {isAnalyzing ? "Analiz Yapılıyor..." : "🚀 Analizi Başlat"}
                 </button>
+                <button
+                  type="button"
+                  className="report-download-btn"
+                  onClick={() => void downloadAnalysisReport()}
+                  disabled={!analyzeResult}
+                >
+                  📥 Excel Raporunu İndir
+                </button>
               </div>
 
               <div className="insight-card opportunity-card">
@@ -1407,7 +1701,7 @@ export default function DashboardPage() {
                     <h2>Öne Çıkan Siparişler</h2>
                   </div>
                   <button
-                    onClick={() => navigateToModule("📦 Operasyon Merkezi")}
+                    onClick={() => navigateToOperation("stock")}
                   >
                     Merkezi aç →
                   </button>
@@ -1418,7 +1712,7 @@ export default function DashboardPage() {
                       type="button"
                       className="opportunity-row dashboard-navigation-row"
                       key={index}
-                      onClick={() => navigateToModule("📦 Operasyon Merkezi")}
+                      onClick={() => navigateToOperation("stock")}
                     >
                       <span
                         className={`priority-badge priority-${String(item["Öncelik"]).toLowerCase()}`}
@@ -1448,672 +1742,82 @@ export default function DashboardPage() {
                 <div className="section-heading">
                   <div>
                     <span>HIZLI ERİŞİM</span>
-                    <h2>Merkezler</h2>
+                    <h2>Çalışma Alanları</h2>
                   </div>
                 </div>
-                <button onClick={() => navigateToModule("☀️ Sabah Brifingi")}>
-                  <span>☀️</span>
+                <button onClick={() => navigateToModule("🤖 AYÇA Asistan")}>
+                  <span>🤖</span>
                   <div>
-                    <b>Sabah Brifingi</b>
-                    <small>Günün aksiyon planı</small>
+                    <b>AYÇA Asistan</b>
+                    <small>Veriye soru sor</small>
                   </div>
                   <em>→</em>
                 </button>
-                <button
-                  onClick={() => navigateToModule("📦 Operasyon Merkezi")}
-                >
+                <button onClick={() => navigateToModule("📦 Operasyon")}>
                   <span>📦</span>
                   <div>
                     <b>Operasyon</b>
-                    <small>Stok ve sipariş</small>
+                    <small>Stok, sipariş ve risk</small>
                   </div>
                   <em>→</em>
                 </button>
-                <button onClick={() => navigateToModule("🚨 Risk Merkezi")}>
-                  <span>🚨</span>
+                <button onClick={() => navigateToModule("💰 Finans")}>
+                  <span>💰</span>
                   <div>
-                    <b>Risk Merkezi</b>
-                    <small>Kritik sinyaller</small>
+                    <b>Finans</b>
+                    <small>Ciro, kâr ve sermaye</small>
                   </div>
                   <em>→</em>
                 </button>
-                <button onClick={() => navigateToModule("🤖 AYÇA Copilot")}>
-                  <span>🤖</span>
+                <button onClick={() => navigateToModule("👥 Hasta & Reçete")}>
+                  <span>👥</span>
                   <div>
-                    <b>AYÇA Copilot</b>
-                    <small>Akıllı yorumlar</small>
+                    <b>Hasta & Reçete</b>
+                    <small>Hasta, doktor ve reçete</small>
                   </div>
                   <em>→</em>
-                </button>
-              </div>
-            </section>
-            <section className="insight-kpi-grid">
-              <div className="insight-kpi">
-                <span>Risk Skoru</span>
-                <strong>{metrics?.risk_score ?? "-"}</strong>
-                <p>
-                  {metrics ? "Son analiz sonucu" : "Henüz analiz yapılmadı"}
-                </p>
-              </div>
-
-              <div className="insight-kpi">
-                <span>Kritik Stok</span>
-                <strong>{metrics?.critical_stock_count ?? "-"}</strong>
-                <p>
-                  {metrics
-                    ? "Kritik stoktaki ürün sayısı"
-                    : "Henüz analiz yapılmadı"}
-                </p>
-              </div>
-
-              <div className="insight-kpi">
-                <span>Veri Güveni</span>
-                <strong>{hasAnalysis ? `%${analysisConfidenceScore}` : "-"}</strong>
-                <p>
-                  {hasAnalysis
-                    ? "Analiz motorlarının doğrulama oranı"
-                    : "Henüz analiz yapılmadı"}
-                </p>
-              </div>
-
-              <div className="insight-kpi">
-                <span>Tahmini Sipariş Tutarı</span>
-                <strong>
-                  {estimatedOrderAmount
-                    ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
-                    : "-"}
-                </strong>
-                <p>
-                  {metrics
-                    ? "Önerilen sipariş bütçesi"
-                    : "Henüz analiz yapılmadı"}
-                </p>
-              </div>
-
-              <div className="insight-kpi">
-                <span>AI Öneri Sayısı</span>
-                <strong>{metrics?.ai_suggestion_count ?? "-"}</strong>
-                <p>
-                  {metrics ? "Üretilen öneri sayısı" : "Henüz analiz yapılmadı"}
-                </p>
-              </div>
-            </section>
-
-            <section className="insight-card">
-              <h2>🩺 Eczane Sağlık Skoru</h2>
-
-              <h1
-                style={{
-                  fontSize: 56,
-                  marginBottom: 10,
-                  color: "#0f766e",
-                }}
-              >
-                {healthScore}/100
-              </h1>
-
-              <progress
-                value={healthScore}
-                max={100}
-                style={{
-                  width: "100%",
-                  height: 14,
-                  marginBottom: 20,
-                }}
-              />
-
-              <div className="analysis-summary">
-                <p>
-                  Genel Durum : <strong>{healthStatus}</strong>
-                </p>
-                <p>
-                  Risk : <strong>{metrics?.risk_score ?? "-"}</strong>
-                </p>
-                <p>
-                  Kritik Stok :{" "}
-                  <strong>{metrics?.critical_stock_count ?? "-"}</strong>
-                </p>
-                <p>
-                  Fazla Stok : <strong>{overStockCount ?? "-"}</strong>
-                </p>
-                <p>
-                  AI Önerileri :{" "}
-                  <strong>{metrics?.ai_suggestion_count ?? "-"}</strong>
-                </p>
-              </div>
-            </section>
-
-            <section className="insight-main-grid">
-              <div className="insight-card upload-card">
-                <h2>Veri Yükleme</h2>
-                <p>Analiz için gerekli 3 Excel dosyasını yükleyin.</p>
-
-                <div className="file-list">
-                  <label>
-                    <span>Envanter.xlsx</span>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={(e) =>
-                        setInventoryFile(e.target.files?.[0] ?? null)
-                      }
-                    />
-                    <small>
-                      {inventoryFile ? inventoryFile.name : "Yüklenmedi"}
-                    </small>
-                  </label>
-
-                  <label>
-                    <span>Satış.xlsx</span>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={(e) =>
-                        setSalesFile(e.target.files?.[0] ?? null)
-                      }
-                    />
-                    <small>{salesFile ? salesFile.name : "Yüklenmedi"}</small>
-                  </label>
-
-                  <label>
-                    <span>Ürün Satış.xlsx</span>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={(e) =>
-                        setProductFile(e.target.files?.[0] ?? null)
-                      }
-                    />
-                    <small>
-                      {productFile ? productFile.name : "Yüklenmedi"}
-                    </small>
-                  </label>
-                </div>
-
-                <button
-                  className="analysis-btn"
-                  onClick={startAnalysis}
-                  disabled={isAnalyzing}
-                >
-                  {isAnalyzing ? "Analiz Yapılıyor..." : "Analizi Başlat"}
-                </button>
-              </div>
-
-              <div className="insight-card">
-                <h2>Son Analiz Özeti</h2>
-
-                {metrics ? (
-                  <div className="analysis-summary">
-                    <p>
-                      ✅ Risk skoru: <strong>{metrics.risk_score}</strong>
-                    </p>
-                    <p>
-                      📦 Kritik stok:{" "}
-                      <strong>{metrics.critical_stock_count}</strong> ürün
-                    </p>
-                    <p>
-                      ⚠️ Yüksek stok: <strong>{overStockCount ?? "-"}</strong>{" "}
-                      ürün
-                    </p>
-                    <p>
-                      💰 Tahmini sipariş:{" "}
-                      <strong>
-                        {estimatedOrderAmount
-                          ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
-                          : "-"}
-                      </strong>
-                    </p>
-                    <p>
-                      🤖 AI öneri sayısı:{" "}
-                      <strong>{metrics.ai_suggestion_count ?? "-"}</strong>
-                    </p>
-                  </div>
-                ) : (
-                  <p>Henüz analiz yapılmadı.</p>
-                )}
-              </div>
-
-              <div className="insight-card">
-                <h2>Veri Kalitesi</h2>
-                <p>
-                  {metrics
-                    ? "Veriler başarıyla analiz edildi."
-                    : "Henüz analiz yapılmadı."}
-                </p>
-                <div className="donut-placeholder"></div>
-              </div>
-
-              <div className="insight-card quick-card">
-                <h2>Hızlı Erişim</h2>
-                <button onClick={() => navigateToModule("🤖 AYÇA Copilot")}>
-                  AI Önerileri →
-                </button>
-                <button onClick={() => setActiveModule("📊 Raporlar")}>
-                  Raporlar →
                 </button>
                 <button
-                  onClick={() => navigateToModule("📦 Operasyon Merkezi")}
+                  type="button"
+                  onClick={() => void downloadAnalysisReport()}
+                  disabled={!analyzeResult}
                 >
-                  Stok Analizi →
+                  <span>📊</span>
+                  <div>
+                    <b>Excel Raporu</b>
+                    <small>Analiz çıktısını dışa aktar</small>
+                  </div>
+                  <em>↓</em>
                 </button>
-                <button>Veri Geçmişi →</button>
               </div>
             </section>
-
-            {orderSuggestions.length > 0 && (
-              <section className="insight-card">
-                <h2>📦 Sipariş Önerileri</h2>
-                <p>İlk 20 ürün önerisi aşağıdadır.</p>
-
-                <div className="table-wrapper">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Öncelik</th>
-                        <th>Ürün</th>
-                        <th>Stok</th>
-                        <th>Satış</th>
-                        <th>Önerilen Sipariş</th>
-                        <th>Tahmini Tutar</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {orderSuggestions.map((item, index) => (
-                        <tr key={index}>
-                          <td>{item["Öncelik"]}</td>
-                          <td>{item["Ürün Adı"]}</td>
-                          <td>{item.Stok}</td>
-                          <td>{item["Satılan Adet"]}</td>
-                          <td>{item["Önerilen Sipariş"]}</td>
-                          <td>
-                            {item["Tahmini Sipariş Tutarı"].toLocaleString(
-                              "tr-TR",
-                            )}{" "}
-                            ₺
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
           </>
         )}
 
-        {activeModule === "☀️ Sabah Brifingi" && (
-          <section className="insight-card">
-            <h2>☀️ Sabah Brifingi</h2>
-            <p>Bugünkü eczane durumunuzun hızlı ve aksiyon odaklı özeti.</p>
-
-            <section className="briefing-hero">
-              <div className="briefing-intro">
-                <span className="hero-kicker">GÜNLÜK YÖNETİCİ BRİFİNGİ</span>
-                <h2>Günaydın {fullName?.split(" ")[0] || ""}, bugün odak net.</h2>
-                <p>
-                  {morningBriefing?.result ??
-                    "Analizi başlatın; AYÇA stok, finans ve risk sinyallerinden günlük aksiyon planınızı oluştursun."}
-                </p>
-                <div className="briefing-status">
-                  <span>● Sistem hazır</span>
-                  <span>{company?.name ?? "İdil Eczanesi"}</span>
-                  <span>
-                    {new Date().toLocaleDateString("tr-TR", {
-                      day: "2-digit",
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </span>
-                </div>
-              </div>
-              <div className="briefing-score-panel">
-                <small>BUGÜNKÜ SAĞLIK SKORU</small>
-                <strong>{healthScore}</strong>
-                <b>{healthStatus}</b>
-                <div className="score-track light">
-                  <i
-                    style={{
-                      width: `${healthScore}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className="briefing-kpi-grid">
-              <div>
-                <span>⛔ Sıfır Stok</span>
-                <strong>
-                  {morningBriefing?.summary.zero_stock_count ??
-                    analyzeResult?.risk_metrics?.zero_stock_count ??
-                    0}
-                </strong>
-                <small>Satış kaybı riski</small>
-              </div>
-              <div>
-                <span>⚠️ Kritik Stok</span>
-                <strong>
-                  {morningBriefing?.summary.critical_stock_count ??
-                    metrics?.critical_stock_count ??
-                    0}
-                </strong>
-                <small>Bugün kontrol et</small>
-              </div>
-              <div>
-                <span>📦 Fazla Stok</span>
-                <strong>
-                  {morningBriefing?.summary.over_stock_count ??
-                    overStockCount ??
-                    0}
-                </strong>
-                <small>Bağlı sermaye</small>
-              </div>
-              <div>
-                <span>🛒 Sipariş Önerisi</span>
-                <strong>
-                  {suggestionCount}
-                </strong>
-                <small>
-                  {(
-                    morningBriefing?.summary.estimated_order_budget ??
-                    estimatedOrderAmount ??
-                    0
-                  ).toLocaleString("tr-TR")}{" "}
-                  ₺ bütçe
-                </small>
-              </div>
-              <div>
-                <span>🧾 İşlem Sayısı</span>
-                <strong>
-                  {morningBriefing?.summary.transaction_count ?? "-"}
-                </strong>
-                <small>Analiz dönemi</small>
-              </div>
-              <div>
-                <span>💰 Toplam Ciro</span>
-                <strong>
-                  {morningBriefing?.summary.total_turnover
-                    ? `${morningBriefing.summary.total_turnover.toLocaleString("tr-TR")} ₺`
-                    : "-"}
-                </strong>
-                <small>Satış performansı</small>
-              </div>
-            </section>
-
-            <section className="briefing-main-grid">
-              <div className="insight-card action-plan-card">
-                <div className="section-heading">
-                  <div>
-                    <span>ÖNCELİKLİ AKSİYONLAR</span>
-                    <h2>Bugün Yapılacaklar</h2>
-                  </div>
-                  <b>{morningBriefing?.top_actions.length ?? 3} görev</b>
-                </div>
-                {(morningBriefing?.top_actions?.length
-                  ? morningBriefing.top_actions
-                  : [
-                      "Kritik stok listesini kontrol et.",
-                      "Sipariş önerilerini önceliğe göre değerlendir.",
-                      "Fazla stok ürünlerinde alımı yavaşlat.",
-                    ]
-                ).map((item, index) => (
-                  <div className="brief-task" key={index}>
-                    <span>{index + 1}</span>
-                    <div>
-                      <b>{item}</b>
-                      <small>
-                        {index === 0
-                          ? "Yüksek öncelik"
-                          : index === 1
-                            ? "Bugün"
-                            : "Takip"}
-                      </small>
-                    </div>
-                    <button>✓</button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="insight-card score-breakdown-card">
-                <div className="section-heading">
-                  <div>
-                    <span>SKOR KIRILIMI</span>
-                    <h2>Eczane Sağlığı</h2>
-                  </div>
-                </div>
-                {Object.entries(
-                  morningBriefing?.score_items ?? {
-                    "Stok Sağlığı": Math.max(
-                      0,
-                      100 - (metrics?.critical_stock_count ?? 0) * 5,
-                    ),
-                    "Risk Kontrolü": Math.max(
-                      0,
-                      100 - (metrics?.risk_score ?? 0) * 10,
-                    ),
-                    "Sipariş Dengesi": Math.max(
-                      0,
-                      100 - (overStockCount ?? 0) * 3,
-                    ),
-                    "Veri Kalitesi": metrics ? 100 : 35,
-                  },
-                ).map(([label, value]) => (
-                  <div className="score-line" key={label}>
-                    <div>
-                      <span>{label}</span>
-                      <strong>{value}/100</strong>
-                    </div>
-                    <i>
-                      <em style={{ width: `${value}%` }} />
-                    </i>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="briefing-signal-grid">
-              <div className="signal-column signal-green">
-                <div className="signal-title">
-                  <span>✅</span>
-                  <div>
-                    <b>Güçlü Yönler</b>
-                    <small>Korunması gereken alanlar</small>
-                  </div>
-                </div>
-                {(morningBriefing?.strong?.length
-                  ? morningBriefing.strong
-                  : [
-                      "Veri yükleme altyapısı hazır.",
-                      "Karar destek motorları aktif.",
-                    ]
-                ).map((x, i) => (
-                  <p key={i}>{x}</p>
-                ))}
-              </div>
-              <div className="signal-column signal-yellow">
-                <div className="signal-title">
-                  <span>🟡</span>
-                  <div>
-                    <b>Takip Edilecekler</b>
-                    <small>Gün içinde kontrol</small>
-                  </div>
-                </div>
-                {(morningBriefing?.watch?.length
-                  ? morningBriefing.watch
-                  : [
-                      "Fazla stok ürünlerini izle.",
-                      "Sipariş bütçesini nakit planıyla eşleştir.",
-                    ]
-                ).map((x, i) => (
-                  <p key={i}>{x}</p>
-                ))}
-              </div>
-              <div className="signal-column signal-red">
-                <div className="signal-title">
-                  <span>🔴</span>
-                  <div>
-                    <b>Acil Konular</b>
-                    <small>Öncelikli müdahale</small>
-                  </div>
-                </div>
-                {(morningBriefing?.urgent?.length
-                  ? morningBriefing.urgent
-                  : [
-                      `${metrics?.critical_stock_count ?? 0} kritik stok sinyali bulunuyor.`,
-                    ]
-                ).map((x, i) => (
-                  <p key={i}>{x}</p>
-                ))}
-              </div>
-            </section>
-
-            <section className="manager-result-banner">
-              <div>
-                <span>🤖 AYÇA YÖNETİCİ SONUCU</span>
-                <h2>
-                  {morningBriefing?.result ??
-                    "Analizden sonra eczanenin güncel durumu ve en kritik yönetici kararı burada tek cümlede özetlenecek."}
-                </h2>
-              </div>
-              <button onClick={() => navigateToModule("🤖 AYÇA Copilot")}>
-                Copilot'a sor →
-              </button>
-            </section>
-            {morningBriefing ? (
-              <>
-                <section className="insight-kpi-grid">
-                  <div className="insight-kpi">
-                    <span>Eczane Sağlık Skoru</span>
-                    <strong>{morningBriefing.score}/100</strong>
-                    <p>{morningBriefing.status}</p>
-                  </div>
-
-                  <div className="insight-kpi">
-                    <span>Kritik Stok</span>
-                    <strong>
-                      {morningBriefing.summary.critical_stock_count}
-                    </strong>
-                    <p>Kontrol edilmesi gereken ürün</p>
-                  </div>
-
-                  <div className="insight-kpi">
-                    <span>Fazla Stok</span>
-                    <strong>{morningBriefing.summary.over_stock_count}</strong>
-                    <p>Bağlı sermaye sinyali</p>
-                  </div>
-
-                  <div className="insight-kpi">
-                    <span>Sipariş Önerisi</span>
-                    <strong>{morningBriefing.summary.suggestion_count}</strong>
-                    <p>
-                      {morningBriefing.summary.estimated_order_budget.toLocaleString(
-                        "tr-TR",
-                      )}{" "}
-                      ₺
-                    </p>
-                  </div>
-                </section>
-
-                <section className="insight-card">
-                  <h2>🩺 Sağlık Skoru Detayı</h2>
-                  <h1
-                    style={{
-                      fontSize: 56,
-                      marginBottom: 10,
-                      color: "#0f766e",
-                    }}
-                  >
-                    {morningBriefing.score}/100
-                  </h1>
-
-                  <progress
-                    value={morningBriefing.score}
-                    max={100}
-                    style={{
-                      width: "100%",
-                      height: 14,
-                      marginBottom: 20,
-                    }}
-                  />
-
-                  <div className="analysis-summary">
-                    {Object.entries(morningBriefing.score_items).map(
-                      ([label, value]) => (
-                        <p key={label}>
-                          {label}: <strong>{value}/100</strong>
-                        </p>
-                      ),
-                    )}
-                  </div>
-                </section>
-
-                <section className="insight-main-grid">
-                  <div className="insight-card">
-                    <h2>🤖 AYÇA Bugün Ne Diyor?</h2>
-                    <div className="analysis-summary">
-                      {morningBriefing.top_actions.map((item, index) => (
-                        <p key={index}>☑ {item}</p>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="insight-card">
-                    <h2>✅ Güçlü Yönler</h2>
-                    <div className="analysis-summary">
-                      {morningBriefing.strong.length > 0 ? (
-                        morningBriefing.strong.map((item, index) => (
-                          <p key={index}>🟢 {item}</p>
-                        ))
-                      ) : (
-                        <p>Henüz güçlü yön verisi oluşmadı.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="insight-card">
-                    <h2>🟡 Takip Edilecekler</h2>
-                    <div className="analysis-summary">
-                      {morningBriefing.watch.length > 0 ? (
-                        morningBriefing.watch.map((item, index) => (
-                          <p key={index}>🟡 {item}</p>
-                        ))
-                      ) : (
-                        <p>Takip gerektiren ek konu görünmüyor.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="insight-card">
-                    <h2>🔴 Acil Konular</h2>
-                    <div className="analysis-summary">
-                      {morningBriefing.urgent.length > 0 ? (
-                        morningBriefing.urgent.map((item, index) => (
-                          <p key={index}>🔴 {item}</p>
-                        ))
-                      ) : (
-                        <p>Acil müdahale gerektiren konu görünmüyor.</p>
-                      )}
-                    </div>
-                  </div>
-                </section>
-
-                <section className="insight-card">
-                  <h2>📌 Yönetici Sonucu</h2>
-                  <p>{morningBriefing.result}</p>
-                </section>
-              </>
-            ) : (
-              <div className="analysis-summary">
-                <p>
-                  Analiz yapıldıktan sonra sağlık skoru, aksiyonlar ve AYÇA
-                  yorumu burada görünecek.
-                </p>
-              </div>
-            )}
+        {activeModule === "📦 Operasyon" && (
+          <section className="operation-tab-shell">
+            <div className="operation-tabs" role="tablist" aria-label="Operasyon bölümleri">
+              {[
+                ["stock", "📦 Sipariş & Stok"],
+                ["risk", "🚨 Risk"],
+                ["runout", "⏱️ Stok Bitiş"],
+                ["expiry", "⏳ Miad"],
+                ["dead", "💀 Fazla / Ölü Stok"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={operationTab === key ? "active" : ""}
+                  onClick={() => setOperationTab(key as OperationTab)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </section>
         )}
 
-        {activeModule === "📦 Operasyon Merkezi" && (
+        {activeModule === "📦 Operasyon" && operationTab === "stock" && (
           <section className="insight-card">
             <p>Stok ve sipariş önerileriniz.</p>
 
@@ -2167,22 +1871,10 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-
-            <div className="table-wrapper" style={{ marginTop: 24 }}>
-              <h2>⏱️ Stok Bitiş Tahmini</h2>
-              <table>
-                <thead><tr><th>Ürün</th><th>Stok</th><th>Dönem Satışı</th><th>Günlük Tüketim</th><th>Tahmini Bitiş</th><th>Durum</th></tr></thead>
-                <tbody>
-                  {stockRunoutProducts.length > 0 ? stockRunoutProducts.map((item, index) => (
-                    <tr key={`${item.product_name}-${index}`}><td>{item.product_name}</td><td>{item.stock}</td><td>{item.sold_quantity}</td><td>{item.daily_consumption}</td><td>{item.estimated_runout_days} gün</td><td>{item.status}</td></tr>
-                  )) : <tr><td colSpan={6}>Analiz sonrası 30 gün içinde bitebilecek ürünler burada görünecek.</td></tr>}
-                </tbody>
-              </table>
-            </div>
           </section>
         )}
 
-        {activeModule === "⏱️ Stok Bitiş Tahmini" && (
+        {activeModule === "📦 Operasyon" && operationTab === "runout" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-danger">
@@ -2271,7 +1963,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "⏳ Miad Takibi" && (
+        {activeModule === "📦 Operasyon" && operationTab === "expiry" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-warning">
@@ -2314,7 +2006,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "💀 Ölü Stok Analizi" && (
+        {activeModule === "📦 Operasyon" && operationTab === "dead" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-overstock">
@@ -2341,7 +2033,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "💰 Finans Merkezi" && (
+        {activeModule === "💰 Finans" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi finance-kpi">
@@ -2663,7 +2355,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "🚨 Risk Merkezi" && (
+        {activeModule === "📦 Operasyon" && operationTab === "risk" && (
           <>
             <section className="insight-kpi-grid">
               <div className="insight-kpi risk-kpi risk-kpi-score">
@@ -2930,7 +2622,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "👥 Hasta & Reçete Merkezi" && (
+        {activeModule === "👥 Hasta & Reçete" && (
           <>
             <section className="patient-hero">
               <div>
@@ -3341,12 +3033,12 @@ export default function DashboardPage() {
           </>
         )}
 
-        {activeModule === "🤖 AYÇA Copilot" && (
+        {activeModule === "🤖 AYÇA Asistan" && (
           <>
             <section className="copilot-page-heading">
               <div>
-                <span>SPRINT 3.8 · YÖNETİM DANIŞMANI</span>
-                <h1>🤖 AYÇA Copilot</h1>
+                <span>YÖNETİM ASİSTANI</span>
+                <h1>🤖 AYÇA Asistan</h1>
                 <p>
                   Stok, finans, risk, doktor ve hasta verilerinizi tek merkezden
                   yorumlayın.
@@ -3374,9 +3066,7 @@ export default function DashboardPage() {
                 <div className="copilot-hero-actions">
                   <button
                     type="button"
-                    onClick={() =>
-                      submitCopilotQuestion("Bugün ne yapmalıyım?")
-                    }
+                    onClick={createTodayPlan}
                   >
                     Bugünün planını oluştur
                   </button>
@@ -3892,7 +3582,7 @@ export default function DashboardPage() {
                     <span>NASIL ÇALIŞIR?</span>
                     <h2>Veriye Dayalı Cevap</h2>
                     <p>
-                      AYÇA Copilot bu aşamada yalnızca yüklediğiniz Excel
+                      AYÇA Asistan bu aşamada yalnızca yüklediğiniz Excel
                       dosyalarından oluşan analiz sonuçlarını yorumlar.
                     </p>
                     <div>
@@ -3916,535 +3606,11 @@ export default function DashboardPage() {
               )}
             </section>
 
-            <style jsx>{`
-              .copilot-page-heading {
-                display: flex;
-                align-items: flex-end;
-                justify-content: space-between;
-                gap: 20px;
-                margin-bottom: 16px;
-              }
-              .copilot-page-heading > div:first-child > span,
-              .copilot-section-title span,
-              .copilot-advisor-card > span,
-              .copilot-guide-card > span {
-                display: block;
-                margin-bottom: 7px;
-                color: #7c3aed;
-                font-size: 11px;
-                font-weight: 900;
-                letter-spacing: 0.08em;
-              }
-              .copilot-page-heading h1 {
-                margin: 0;
-                color: #21104f;
-                font-size: 28px;
-              }
-              .copilot-page-heading p {
-                margin: 6px 0 0;
-                color: #64748b;
-              }
-              .copilot-status-pill {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                border: 1px solid #ddd6fe;
-                border-radius: 999px;
-                background: #fff;
-                padding: 9px 14px;
-                color: #5b21b6;
-                font-size: 12px;
-                font-weight: 800;
-              }
-              .copilot-status-pill i {
-                width: 8px;
-                height: 8px;
-                border-radius: 50%;
-                background: #22c55e;
-                box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.12);
-              }
-              .copilot-hero {
-                display: grid;
-                grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.7fr);
-                gap: 24px;
-                margin-bottom: 16px;
-                border: 1px solid #ddd6fe;
-                border-radius: 24px;
-                background:
-                  radial-gradient(
-                    circle at 84% 20%,
-                    rgba(168, 85, 247, 0.18),
-                    transparent 30%
-                  ),
-                  linear-gradient(135deg, #faf5ff, #fff 54%, #f5f3ff);
-                padding: 28px;
-              }
-              .copilot-hero-label {
-                display: inline-flex;
-                border: 1px solid #d8b4fe;
-                border-radius: 999px;
-                background: #fff;
-                padding: 6px 10px;
-                color: #7e22ce;
-                font-size: 10px;
-                font-weight: 900;
-              }
-              .copilot-hero h2 {
-                margin: 16px 0 10px;
-                color: #2e1065;
-                font-size: clamp(28px, 3vw, 45px);
-                line-height: 1.04;
-              }
-              .copilot-hero p {
-                color: #64748b;
-                line-height: 1.7;
-              }
-              .copilot-hero-actions {
-                display: flex;
-                gap: 10px;
-                margin-top: 20px;
-                flex-wrap: wrap;
-              }
-              .copilot-hero-actions button,
-              .copilot-input-row button {
-                border: 0;
-                border-radius: 13px;
-                background: linear-gradient(135deg, #7c3aed, #9333ea);
-                padding: 11px 16px;
-                color: #fff;
-                font-weight: 900;
-                cursor: pointer;
-              }
-              .copilot-hero-actions button.secondary {
-                border: 1px solid #d8b4fe;
-                background: #fff;
-                color: #6b21a8;
-              }
-              .copilot-score-card {
-                border: 1px solid rgba(255, 255, 255, 0.8);
-                border-radius: 21px;
-                background: rgba(255, 255, 255, 0.84);
-                padding: 24px;
-                box-shadow: 0 18px 50px rgba(109, 40, 217, 0.12);
-              }
-              .copilot-score-card span,
-              .copilot-score-card small {
-                color: #7c3aed;
-                font-size: 12px;
-                font-weight: 800;
-              }
-              .copilot-score-card strong {
-                display: block;
-                margin: 8px 0 0;
-                color: #2e1065;
-                font-size: 58px;
-                line-height: 1;
-              }
-              .copilot-score-track {
-                height: 8px;
-                margin: 18px 0;
-                border-radius: 999px;
-                background: #ede9fe;
-                overflow: hidden;
-              }
-              .copilot-score-track i {
-                display: block;
-                height: 100%;
-                border-radius: inherit;
-                background: linear-gradient(90deg, #ec4899, #7c3aed);
-              }
-              .copilot-score-card p {
-                margin: 0;
-                color: #475569;
-                font-size: 13px;
-              }
-              .copilot-kpi-grid {
-                display: grid;
-                grid-template-columns: repeat(5, minmax(0, 1fr));
-                gap: 12px;
-                margin-bottom: 16px;
-              }
-              .copilot-kpi-grid > div {
-                border: 1px solid #e9d5ff;
-                border-radius: 18px;
-                background: #fff;
-                padding: 17px;
-              }
-              .copilot-kpi-grid span {
-                color: #6b21a8;
-                font-size: 11px;
-                font-weight: 800;
-              }
-              .copilot-kpi-grid strong {
-                display: block;
-                margin: 8px 0 4px;
-                color: #1e1b4b;
-                font-size: 23px;
-              }
-              .copilot-kpi-grid small {
-                color: #94a3b8;
-              }
-              .copilot-tab-shell {
-                border: 1px solid #e9d5ff;
-                border-radius: 20px;
-                background: rgba(255, 255, 255, 0.72);
-                padding: 12px;
-              }
-              .copilot-tabs {
-                display: flex;
-                gap: 7px;
-                margin-bottom: 13px;
-                border-radius: 15px;
-                background: #faf5ff;
-                padding: 6px;
-                overflow-x: auto;
-              }
-              .copilot-tabs button {
-                flex: 0 0 auto;
-                border: 0;
-                border-radius: 10px;
-                background: transparent;
-                padding: 10px 13px;
-                color: #6b21a8;
-                font-weight: 850;
-                cursor: pointer;
-              }
-              .copilot-tabs button.active {
-                background: linear-gradient(135deg, #7c3aed, #9333ea);
-                color: #fff;
-                box-shadow: 0 8px 18px rgba(124, 58, 237, 0.22);
-              }
-              .copilot-overview-grid,
-              .copilot-advisor-grid,
-              .copilot-chat-layout {
-                display: grid;
-                grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
-                gap: 14px;
-              }
-              .copilot-section-title {
-                display: flex;
-                align-items: flex-start;
-                justify-content: space-between;
-                gap: 15px;
-                margin-bottom: 16px;
-              }
-              .copilot-section-title h2,
-              .copilot-advisor-card h2,
-              .copilot-guide-card h2 {
-                margin: 0;
-                color: #2e1065;
-              }
-              .copilot-section-title > b {
-                border-radius: 999px;
-                background: #f3e8ff;
-                padding: 7px 10px;
-                color: #7e22ce;
-                font-size: 12px;
-              }
-              .copilot-signal-columns {
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                gap: 12px;
-              }
-              .copilot-signal-columns > div {
-                border: 1px solid #ede9fe;
-                border-radius: 15px;
-                background: #fafafa;
-                padding: 14px;
-              }
-              .copilot-signal-columns h3 {
-                margin: 0 0 10px;
-                color: #312e81;
-                font-size: 13px;
-              }
-              .copilot-signal-columns p,
-              .copilot-advice-list p {
-                margin: 7px 0;
-                color: #64748b;
-                font-size: 12px;
-                line-height: 1.55;
-              }
-              .copilot-action-row {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                border-bottom: 1px solid #f1f5f9;
-                padding: 12px 0;
-              }
-              .copilot-action-row span {
-                display: grid;
-                width: 32px;
-                height: 32px;
-                place-items: center;
-                border-radius: 10px;
-                background: #f3e8ff;
-                color: #7e22ce;
-                font-size: 11px;
-                font-weight: 900;
-              }
-              .copilot-action-row p {
-                margin: 0;
-                color: #334155;
-                font-weight: 700;
-              }
-              .copilot-advisor-card > p {
-                color: #64748b;
-                line-height: 1.65;
-              }
-              .copilot-advisor-metrics {
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                gap: 10px;
-                margin: 18px 0;
-              }
-              .copilot-advisor-metrics > div {
-                border-radius: 14px;
-                background: #faf5ff;
-                padding: 14px;
-                text-align: center;
-              }
-              .copilot-advisor-metrics b {
-                display: block;
-                color: #581c87;
-                font-size: 24px;
-              }
-              .copilot-advisor-metrics small {
-                color: #7c3aed;
-              }
-              .copilot-product-row {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                gap: 15px;
-                border-bottom: 1px solid #f1f5f9;
-                padding: 12px 0;
-              }
-              .copilot-product-row b {
-                display: block;
-                color: #312e81;
-              }
-              .copilot-product-row small {
-                color: #94a3b8;
-              }
-              .copilot-product-row strong {
-                color: #7e22ce;
-                white-space: nowrap;
-              }
-              .copilot-finance-list > div {
-                display: flex;
-                justify-content: space-between;
-                gap: 15px;
-                border-bottom: 1px solid #f1f5f9;
-                padding: 11px 0;
-              }
-              .copilot-finance-list span {
-                color: #64748b;
-              }
-              .copilot-finance-list b {
-                color: #312e81;
-              }
-              .copilot-highlight {
-                margin-top: 18px;
-                border-radius: 15px;
-                background: linear-gradient(135deg, #faf5ff, #f5f3ff);
-                padding: 15px;
-              }
-              .copilot-highlight span,
-              .copilot-highlight small {
-                display: block;
-                color: #7c3aed;
-                font-size: 11px;
-              }
-              .copilot-highlight b {
-                display: block;
-                margin: 6px 0;
-                color: #2e1065;
-              }
-              .copilot-empty {
-                border: 1px dashed #d8b4fe;
-                border-radius: 14px;
-                background: #faf5ff;
-                padding: 30px 18px;
-                color: #7c3aed;
-                text-align: center;
-                font-weight: 800;
-              }
-              .copilot-quick-questions {
-                display: flex;
-                gap: 7px;
-                margin-bottom: 15px;
-                flex-wrap: wrap;
-              }
-              .copilot-quick-questions button {
-                border: 1px solid #ddd6fe;
-                border-radius: 999px;
-                background: #fff;
-                padding: 8px 11px;
-                color: #6d28d9;
-                font-size: 11px;
-                font-weight: 800;
-                cursor: pointer;
-              }
-              .copilot-messages {
-                min-height: 310px;
-                max-height: 480px;
-                border-radius: 16px;
-                background: #f8fafc;
-                padding: 14px;
-                overflow-y: auto;
-              }
-              .copilot-message {
-                max-width: 84%;
-                margin-bottom: 12px;
-                border-radius: 15px;
-                padding: 12px 14px;
-              }
-              .copilot-message.assistant {
-                margin-right: auto;
-                background: #fff;
-                box-shadow: 0 5px 18px rgba(76, 29, 149, 0.08);
-              }
-              .copilot-message.user {
-                margin-left: auto;
-                background: linear-gradient(135deg, #7c3aed, #9333ea);
-                color: #fff;
-              }
-              .copilot-message span {
-                display: block;
-                margin-bottom: 5px;
-                font-size: 10px;
-                font-weight: 900;
-                opacity: 0.72;
-              }
-              .copilot-message p {
-                margin: 0;
-                white-space: pre-line;
-                line-height: 1.6;
-              }
-              .copilot-input-row {
-                display: grid;
-                grid-template-columns: 1fr auto;
-                gap: 9px;
-                margin-top: 12px;
-              }
-              .copilot-input-row textarea {
-                min-height: 54px;
-                resize: vertical;
-                border: 1px solid #ddd6fe;
-                border-radius: 13px;
-                padding: 12px;
-                font: inherit;
-                outline: none;
-              }
-              .copilot-guide-card > p {
-                color: #64748b;
-                line-height: 1.7;
-              }
-              .copilot-guide-card > div {
-                display: flex;
-                align-items: flex-start;
-                gap: 10px;
-                margin-top: 13px;
-              }
-              .copilot-guide-card > div b {
-                display: grid;
-                width: 24px;
-                height: 24px;
-                place-items: center;
-                border-radius: 8px;
-                background: #dcfce7;
-                color: #15803d;
-              }
-              .copilot-guide-card > div p {
-                margin: 2px 0 0;
-                color: #475569;
-              }
-              @media (max-width: 1100px) {
-                .copilot-kpi-grid {
-                  grid-template-columns: repeat(3, 1fr);
-                }
-                .copilot-hero,
-                .copilot-overview-grid,
-                .copilot-advisor-grid,
-                .copilot-chat-layout {
-                  grid-template-columns: 1fr;
-                }
-              }
-              @media (max-width: 720px) {
-                .copilot-page-heading {
-                  align-items: flex-start;
-                  flex-direction: column;
-                }
-                .copilot-kpi-grid,
-                .copilot-signal-columns,
-                .copilot-advisor-metrics {
-                  grid-template-columns: 1fr;
-                }
-                .copilot-hero {
-                  padding: 20px;
-                }
-                .copilot-input-row {
-                  grid-template-columns: 1fr;
-                }
-              }
-            `}</style>
+
           </>
         )}
 
 
-        {activeModule === "📊 Raporlar" && (
-          <section className="insight-card">
-            <h2>📊 AYÇA Insight Raporları</h2>
-            <p>Analiz sonuçlarını yönetici özeti, sipariş, risk, stok bitiş, ölü stok, miad ve finans sayfalarıyla Excel olarak indirin.</p>
-            <button className="primary-button" onClick={downloadAnalysisReport} disabled={!analyzeResult}>
-              📥 Excel Analiz Raporunu İndir
-            </button>
-            <div className="analysis-summary" style={{ marginTop: 20 }}>
-              <p>
-                Analiz durumu:{" "}
-                <strong>
-                  {analyzeResult
-                    ? analyzeResult.analysis_status === "complete"
-                      ? "Tamamlandı"
-                      : analyzeResult.analysis_status === "partial"
-                        ? "Kısmi"
-                        : analyzeResult.analysis_status === "failed"
-                          ? "Başarısız"
-                          : "Hazır"
-                    : "Önce analiz yapınız"}
-                </strong>
-              </p>
-              <p>
-                Veri güveni: <strong>%{analysisConfidenceScore}</strong>
-              </p>
-              <p>Sipariş önerisi: <strong>{suggestionCount}</strong></p>
-              <p>Kritik stok: <strong>{criticalStockCount}</strong></p>
-              <p>Miad uyarısı: <strong>{expiryMetrics?.warning_count ?? 0}</strong></p>
-              <p>Ölü stok: <strong>{deadStockCount}</strong></p>
-            </div>
-          </section>
-        )}
-
-        {activeModule !== "🏠 Dashboard" &&
-          activeModule !== "☀️ Sabah Brifingi" &&
-          activeModule !== "📦 Operasyon Merkezi" &&
-          activeModule !== "💰 Finans Merkezi" &&
-          activeModule !== "🚨 Risk Merkezi" &&
-          activeModule !== "⏱️ Stok Bitiş Tahmini" &&
-          activeModule !== "⏳ Miad Takibi" &&
-          activeModule !== "💀 Ölü Stok Analizi" &&
-          activeModule !== "👥 Hasta & Reçete Merkezi" &&
-          activeModule !== "🤖 AYÇA Copilot" &&
-          activeModule !== "📊 Raporlar" && (
-            <section className="insight-card module-placeholder">
-              <h2>{activeModule}</h2>
-              <p>
-                Bu alan, mevcut Streamlit AYÇA Insight modülünden Next.js
-                platformuna taşınacak.
-              </p>
-              <div className="empty-chart">Modül iskeleti hazır.</div>
-            </section>
-          )}
         </AnimatedPage>
         )}
       </section>

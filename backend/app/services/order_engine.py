@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 
 from app.services.data_quality import (
@@ -7,7 +9,9 @@ from app.services.data_quality import (
     normalize_text,
     to_number,
 )
-from app.services.inventory_intelligence_engine import build_inventory_intelligence
+from app.services.inventory_intelligence_engine import (
+    build_inventory_intelligence,
+)
 
 
 PURCHASE_PRICE_CANDIDATES = [
@@ -35,8 +39,9 @@ def _prepare_order_costs(
     intelligence: pd.DataFrame,
 ) -> tuple[pd.DataFrame, str, bool]:
     """
-    Sipariş bütçesi için mümkünse alış/maliyet fiyatını kullanır.
-    Alış/maliyet fiyatı bulunamazsa mevcut ürün fiyatına geri düşer.
+    Sipariş ve stok sermayesi hesabında mümkünse alış/maliyet
+    fiyatını kullanır. Alış/maliyet fiyatı bulunamazsa mevcut
+    ürün fiyatına geri düşer.
 
     Returns:
         intelligence_with_costs,
@@ -53,9 +58,19 @@ def _prepare_order_costs(
     if purchase_price_column is None:
         out["order_unit_cost"] = out["unit_price"]
         out["estimated_order_value"] = (
-            out["recommended_order"] * out["order_unit_cost"]
+            out["recommended_order"]
+            * out["order_unit_cost"]
         )
-        return out, "fallback_unit_price", True
+        out["inventory_capital_value"] = (
+            out["stock"].clip(lower=0)
+            * out["order_unit_cost"]
+        )
+
+        return (
+            out,
+            "fallback_unit_price",
+            True,
+        )
 
     inventory = inventory_df.copy()
     inventory["_order_unit_cost"] = to_number(
@@ -112,14 +127,22 @@ def _prepare_order_costs(
                 inventory[inventory_name_column]
                 .fillna("")
                 .astype(str)
-                .map(lambda value: normalize_text(value).casefold())
+                .map(
+                    lambda value: normalize_text(
+                        value
+                    ).casefold()
+                )
             )
 
             out["_name_key"] = (
                 out["product_name"]
                 .fillna("")
                 .astype(str)
-                .map(lambda value: normalize_text(value).casefold())
+                .map(
+                    lambda value: normalize_text(
+                        value
+                    ).casefold()
+                )
             )
 
             price_map = (
@@ -154,64 +177,323 @@ def _prepare_order_costs(
             out["order_unit_cost"] = out["unit_price"]
 
     out["estimated_order_value"] = (
-        out["recommended_order"] * out["order_unit_cost"]
+        out["recommended_order"]
+        * out["order_unit_cost"]
     )
 
-    return out, purchase_price_column, False
+    out["inventory_capital_value"] = (
+        out["stock"].clip(lower=0)
+        * out["order_unit_cost"]
+    )
+
+    return (
+        out,
+        purchase_price_column,
+        False,
+    )
+
+
+def _apply_capital_guard(
+    suggestions: pd.DataFrame,
+    inventory_value: float,
+    max_order_to_inventory_ratio: float,
+) -> tuple[pd.DataFrame, dict]:
+    """
+    Ham sipariş önerisini mevcut stok sermayesine göre sınırlar.
+
+    Bütçe dağıtımı:
+      1. Yüksek öncelik
+      2. Orta öncelik
+      3. Normal öncelik
+
+    Aynı öncelikte daha kısa stok günü ve daha yüksek önerilen
+    miktar önce değerlendirilir.
+
+    Limit aşılırsa son üründe bütçeye sığan adet kadar kısmi
+    sipariş önerilebilir.
+    """
+    out = suggestions.copy()
+
+    raw_budget = float(
+        out["estimated_order_value"].sum()
+    )
+
+    if (
+        inventory_value <= 0
+        or max_order_to_inventory_ratio <= 0
+    ):
+        out["raw_recommended_order"] = (
+            out["recommended_order"]
+        )
+        out["raw_estimated_order_value"] = (
+            out["estimated_order_value"]
+        )
+
+        return out, {
+            "inventory_value": round(
+                float(inventory_value),
+                2,
+            ),
+            "raw_order_budget": round(
+                raw_budget,
+                2,
+            ),
+            "max_recommended_order_budget": round(
+                raw_budget,
+                2,
+            ),
+            "capital_guard_applied": False,
+            "capital_guard_ratio": (
+                max_order_to_inventory_ratio
+            ),
+            "raw_order_to_inventory_ratio": None,
+            "order_to_inventory_ratio": None,
+            "budget_reduction": 0.0,
+        }
+
+    budget_limit = (
+        float(inventory_value)
+        * float(max_order_to_inventory_ratio)
+    )
+
+    raw_ratio = (
+        raw_budget / inventory_value
+        if inventory_value > 0
+        else None
+    )
+
+    out["raw_recommended_order"] = (
+        out["recommended_order"]
+    )
+    out["raw_estimated_order_value"] = (
+        out["estimated_order_value"]
+    )
+
+    guard_applied = raw_budget > budget_limit
+
+    if not guard_applied:
+        final_budget = raw_budget
+
+        return out, {
+            "inventory_value": round(
+                float(inventory_value),
+                2,
+            ),
+            "raw_order_budget": round(
+                raw_budget,
+                2,
+            ),
+            "max_recommended_order_budget": round(
+                budget_limit,
+                2,
+            ),
+            "capital_guard_applied": False,
+            "capital_guard_ratio": (
+                max_order_to_inventory_ratio
+            ),
+            "raw_order_to_inventory_ratio": round(
+                float(raw_ratio),
+                4,
+            ),
+            "order_to_inventory_ratio": round(
+                float(raw_ratio),
+                4,
+            ),
+            "budget_reduction": 0.0,
+        }
+
+    remaining_budget = budget_limit
+
+    adjusted_orders = []
+    adjusted_values = []
+
+    for _, row in out.iterrows():
+        unit_cost = float(
+            row["order_unit_cost"]
+        )
+        raw_qty = int(
+            row["recommended_order"]
+        )
+
+        if (
+            remaining_budget <= 0
+            or unit_cost <= 0
+            or raw_qty <= 0
+        ):
+            adjusted_qty = 0
+        else:
+            affordable_qty = int(
+                math.floor(
+                    remaining_budget / unit_cost
+                )
+            )
+
+            adjusted_qty = min(
+                raw_qty,
+                max(affordable_qty, 0),
+            )
+
+        adjusted_value = (
+            adjusted_qty * unit_cost
+        )
+
+        adjusted_orders.append(
+            adjusted_qty
+        )
+        adjusted_values.append(
+            adjusted_value
+        )
+
+        remaining_budget = max(
+            0.0,
+            remaining_budget - adjusted_value,
+        )
+
+    out["recommended_order"] = (
+        adjusted_orders
+    )
+    out["estimated_order_value"] = (
+        adjusted_values
+    )
+
+    out = out[
+        out["recommended_order"] > 0
+    ].copy()
+
+    final_budget = float(
+        out["estimated_order_value"].sum()
+    )
+
+    final_ratio = (
+        final_budget / inventory_value
+        if inventory_value > 0
+        else None
+    )
+
+    return out, {
+        "inventory_value": round(
+            float(inventory_value),
+            2,
+        ),
+        "raw_order_budget": round(
+            raw_budget,
+            2,
+        ),
+        "max_recommended_order_budget": round(
+            budget_limit,
+            2,
+        ),
+        "capital_guard_applied": True,
+        "capital_guard_ratio": (
+            max_order_to_inventory_ratio
+        ),
+        "raw_order_to_inventory_ratio": round(
+            float(raw_ratio),
+            4,
+        ),
+        "order_to_inventory_ratio": round(
+            float(final_ratio),
+            4,
+        ),
+        "budget_reduction": round(
+            raw_budget - final_budget,
+            2,
+        ),
+    }
 
 
 def calculate_order_suggestions(
     inventory_df: pd.DataFrame,
     product_df: pd.DataFrame | None = None,
     target_stock_days: int = 30,
+    max_order_to_inventory_ratio: float = 0.35,
 ):
     if inventory_df is None or inventory_df.empty:
         return {
             "success": False,
-            "error": "Envanter dosyası boş veya bulunamadı.",
+            "error": (
+                "Envanter dosyası boş veya bulunamadı."
+            ),
             "suggestion_count": 0,
             "estimated_order_budget": 0,
+            "raw_order_budget": 0,
+            "inventory_value": 0,
             "top_suggestions": [],
         }
 
-    intelligence, period_days = build_inventory_intelligence(
-        inventory_df=inventory_df,
-        product_df=product_df,
-        target_stock_days=target_stock_days,
+    intelligence, period_days = (
+        build_inventory_intelligence(
+            inventory_df=inventory_df,
+            product_df=product_df,
+            target_stock_days=target_stock_days,
+        )
     )
 
     if intelligence.empty:
         return {
             "success": False,
-            "error": "Sipariş analizi için stok kolonu bulunamadı.",
+            "error": (
+                "Sipariş analizi için stok kolonu "
+                "bulunamadı."
+            ),
             "suggestion_count": 0,
             "estimated_order_budget": 0,
+            "raw_order_budget": 0,
+            "inventory_value": 0,
             "top_suggestions": [],
         }
 
     # İşletmenin kendi minimum/kritik stok seviyesi,
-    # 30 günlük tüketim hedefinden daha yüksekse onu taban kabul et.
+    # 30 günlük tüketim hedefinden daha yüksekse onu
+    # taban kabul et.
     intelligence["effective_target_stock"] = (
         intelligence[
-            ["target_stock", "critical_stock"]
+            [
+                "target_stock",
+                "critical_stock",
+            ]
         ]
         .max(axis=1)
         .clip(lower=0)
     )
 
     intelligence["recommended_order"] = (
-        intelligence["effective_target_stock"]
+        intelligence[
+            "effective_target_stock"
+        ]
         - intelligence["stock"]
-    ).clip(lower=0).apply(lambda value: int(-(-value // 1)))
+    ).clip(lower=0).apply(
+        lambda value: int(math.ceil(value))
+    )
 
-    intelligence, price_source, price_assumed = _prepare_order_costs(
+    (
+        intelligence,
+        price_source,
+        price_assumed,
+    ) = _prepare_order_costs(
         inventory_df=inventory_df,
         intelligence=intelligence,
     )
 
+    # Eczanenin mevcut stok sermayesi.
+    # Mümkünse alış/maliyet fiyatından hesaplanır.
+    inventory_value = float(
+        intelligence[
+            "inventory_capital_value"
+        ].sum()
+    )
+
     suggestions = intelligence[
-        (intelligence["sold_quantity"] > 0)
-        & (intelligence["recommended_order"] > 0)
+        (
+            intelligence[
+                "sold_quantity"
+            ] > 0
+        )
+        & (
+            intelligence[
+                "recommended_order"
+            ] > 0
+        )
     ].copy()
 
     def priority(row):
@@ -220,7 +502,8 @@ def calculate_order_suggestions(
 
         if (
             row["critical_stock"] > 0
-            and row["stock"] <= row["critical_stock"]
+            and row["stock"]
+            <= row["critical_stock"]
         ):
             return "Yüksek"
 
@@ -232,9 +515,11 @@ def calculate_order_suggestions(
 
         return "Normal"
 
-    suggestions["priority"] = suggestions.apply(
-        priority,
-        axis=1,
+    suggestions["priority"] = (
+        suggestions.apply(
+            priority,
+            axis=1,
+        )
     )
 
     priority_order = {
@@ -249,60 +534,129 @@ def calculate_order_suggestions(
         .fillna(0)
     )
 
+    # Capital Guard bütçeyi bu sıralamaya göre dağıtır.
     suggestions = suggestions.sort_values(
         [
             "_priority",
+            "stock_days",
             "recommended_order",
             "estimated_order_value",
         ],
-        ascending=[False, False, False],
+        ascending=[
+            False,
+            True,
+            False,
+            False,
+        ],
+    )
+
+    (
+        suggestions,
+        capital_guard,
+    ) = _apply_capital_guard(
+        suggestions=suggestions,
+        inventory_value=inventory_value,
+        max_order_to_inventory_ratio=(
+            max_order_to_inventory_ratio
+        ),
     )
 
     records = []
 
-    for _, row in suggestions.head(50).iterrows():
+    for _, row in (
+        suggestions.head(50).iterrows()
+    ):
         stock_days = (
             None
-            if row["stock_days"] == float("inf")
-            else round(float(row["stock_days"]), 1)
+            if row["stock_days"]
+            == float("inf")
+            else round(
+                float(row["stock_days"]),
+                1,
+            )
         )
 
-        records.append(
-            {
-                "Ürün Adı": row["product_name"],
-                "Stok": round(float(row["stock"]), 2),
-                "Kritik Stok": round(
-                    float(row["critical_stock"]),
-                    2,
+        record = {
+            "Ürün Adı": row["product_name"],
+            "Stok": round(
+                float(row["stock"]),
+                2,
+            ),
+            "Kritik Stok": round(
+                float(row["critical_stock"]),
+                2,
+            ),
+            "Satılan Adet": round(
+                float(row["sold_quantity"]),
+                2,
+            ),
+            "Günlük Tüketim": round(
+                float(row["daily_consumption"]),
+                2,
+            ),
+            "Stok Gün Karşılığı": (
+                stock_days
+            ),
+            "Hedef Stok": int(
+                row[
+                    "effective_target_stock"
+                ]
+            ),
+            "Önerilen Sipariş": int(
+                row["recommended_order"]
+            ),
+            "Sipariş Birim Maliyeti": round(
+                float(
+                    row[
+                        "order_unit_cost"
+                    ]
                 ),
-                "Satılan Adet": round(
-                    float(row["sold_quantity"]),
-                    2,
+                2,
+            ),
+            "Tahmini Sipariş Tutarı": round(
+                float(
+                    row[
+                        "estimated_order_value"
+                    ]
                 ),
-                "Günlük Tüketim": round(
-                    float(row["daily_consumption"]),
-                    2,
-                ),
-                "Stok Gün Karşılığı": stock_days,
-                "Hedef Stok": int(
-                    row["effective_target_stock"]
-                ),
-                "Önerilen Sipariş": int(
-                    row["recommended_order"]
-                ),
-                "Sipariş Birim Maliyeti": round(
-                    float(row["order_unit_cost"]),
-                    2,
-                ),
-                "Tahmini Sipariş Tutarı": round(
-                    float(row["estimated_order_value"]),
-                    2,
-                ),
-                "Öncelik": row["priority"],
-            }
-        )
+                2,
+            ),
+            "Öncelik": row["priority"],
+        }
 
-    _, period_assumed = estimate_period_days(
+        if (
+            "raw_recommended_order"
+            in row.index
+        ):
+            record[
+                "Ham Önerilen Sipariş"
+            ] = int(
+                row[
+                    "raw_recommended_order"
+                ]
+            )
+
+        if (
+            "raw_estimated_order_value"
+            in row.index
+        ):
+            record[
+                "Ham Sipariş Tutarı"
+            ] = round(
+                float(
+                    row[
+                        "raw_estimated_order_value"
+                    ]
+                ),
+                2,
+            )
+
+        records.append(record)
+
+    (
+        _,
+        period_assumed,
+    ) = estimate_period_days(
         product_df,
         default_days=30,
     )
@@ -311,29 +665,104 @@ def calculate_order_suggestions(
 
     if period_assumed:
         warnings.append(
-            "Satış dönemi tarih kolonundan doğrulanamadı; "
-            "30 gün varsayıldı."
+            "Satış dönemi tarih kolonundan "
+            "doğrulanamadı; 30 gün varsayıldı."
         )
 
     if price_assumed:
         warnings.append(
-            "Alış/maliyet fiyatı bulunamadı; sipariş bütçesinde "
+            "Alış/maliyet fiyatı bulunamadı; "
+            "sipariş ve stok sermayesi hesabında "
             "mevcut ürün fiyatı kullanıldı."
         )
 
+    if capital_guard[
+        "capital_guard_applied"
+    ]:
+        warnings.append(
+            "Ham sipariş bütçesi mevcut stok "
+            "sermayesine göre yüksek bulundu. "
+            f"Sipariş bütçesi stok değerinin "
+            f"%{round(max_order_to_inventory_ratio * 100)} "
+            "seviyesinde sınırlandırıldı."
+        )
+
+    estimated_order_budget = round(
+        float(
+            suggestions[
+                "estimated_order_value"
+            ].sum()
+        ),
+        2,
+    )
+
     return {
         "success": True,
-        "analysis_period_days": period_days,
-        "analysis_period_assumed": period_assumed,
-        "target_stock_days": target_stock_days,
-        "suggestion_count": int(len(suggestions)),
-        "estimated_order_budget": round(
-            float(
-                suggestions[
-                    "estimated_order_value"
-                ].sum()
-            ),
+        "analysis_period_days": (
+            period_days
+        ),
+        "analysis_period_assumed": (
+            period_assumed
+        ),
+        "target_stock_days": (
+            target_stock_days
+        ),
+        "suggestion_count": int(
+            len(suggestions)
+        ),
+        "raw_suggestion_count": int(
+            (
+                intelligence[
+                    "sold_quantity"
+                ] > 0
+            )
+            .where(
+                intelligence[
+                    "recommended_order"
+                ] > 0,
+                False,
+            )
+            .sum()
+        ),
+        "inventory_value": round(
+            inventory_value,
             2,
+        ),
+        "estimated_order_budget": (
+            estimated_order_budget
+        ),
+        "raw_order_budget": capital_guard[
+            "raw_order_budget"
+        ],
+        "max_recommended_order_budget": (
+            capital_guard[
+                "max_recommended_order_budget"
+            ]
+        ),
+        "capital_guard_applied": (
+            capital_guard[
+                "capital_guard_applied"
+            ]
+        ),
+        "capital_guard_ratio": (
+            capital_guard[
+                "capital_guard_ratio"
+            ]
+        ),
+        "raw_order_to_inventory_ratio": (
+            capital_guard[
+                "raw_order_to_inventory_ratio"
+            ]
+        ),
+        "order_to_inventory_ratio": (
+            capital_guard[
+                "order_to_inventory_ratio"
+            ]
+        ),
+        "budget_reduction": (
+            capital_guard[
+                "budget_reduction"
+            ]
         ),
         "price_source": price_source,
         "price_assumed": price_assumed,
