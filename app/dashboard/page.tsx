@@ -363,6 +363,7 @@ export default function DashboardPage() {
     },
   ]);
   const [isCopilotThinking, setIsCopilotThinking] = useState(false);
+  const [isAssistantDrawerOpen, setIsAssistantDrawerOpen] = useState(false);
 
   function handlePatientNameVisibility() {
     if (showPatientNames) {
@@ -1147,7 +1148,10 @@ export default function DashboardPage() {
         },
         body: JSON.stringify({
           company_id: companyId,
-          question: finalQuestion,
+          question:
+            activeModule === "🤖 AYÇA Asistan"
+              ? finalQuestion
+              : `[Aktif ekran: ${activeModule}] ${finalQuestion}`,
           analysis_result: analyzeResult,
         }),
       });
@@ -1311,9 +1315,124 @@ export default function DashboardPage() {
           ))}
         </nav>
 
-        <button className="logout-btn" onClick={logout}>
-          Çıkış Yap
-        </button>
+        <div
+          style={{
+            marginTop: "auto",
+            padding: "12px",
+            display: "grid",
+            gap: "10px",
+          }}
+        >
+          <div
+            style={{
+              border: "1px solid rgba(255,255,255,0.14)",
+              borderRadius: "14px",
+              padding: "12px",
+              background: "rgba(255,255,255,0.06)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "10px",
+                marginBottom: "8px",
+              }}
+            >
+              <span style={{ fontSize: "12px", fontWeight: 800 }}>
+                Veri Güveni
+              </span>
+              <strong style={{ fontSize: "16px" }}>
+                {hasAnalysis ? `%${analysisConfidenceScore}` : "-"}
+              </strong>
+            </div>
+
+            <div
+              style={{
+                height: "7px",
+                borderRadius: "999px",
+                overflow: "hidden",
+                background: "rgba(255,255,255,0.14)",
+              }}
+            >
+              <div
+                style={{
+                  width: `${hasAnalysis ? analysisConfidenceScore : 0}%`,
+                  height: "100%",
+                  borderRadius: "999px",
+                  background:
+                    "linear-gradient(90deg, #facc15 0%, #22c55e 100%)",
+                  transition: "width 250ms ease",
+                }}
+              />
+            </div>
+
+            <p
+              style={{
+                margin: "8px 0 0",
+                fontSize: "10px",
+                lineHeight: 1.4,
+                opacity: 0.72,
+              }}
+            >
+              Analiz motorlarının doğrulama oranı
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "10px 4px",
+            }}
+          >
+            <span
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: "50%",
+                display: "grid",
+                placeItems: "center",
+                flex: "0 0 auto",
+                background: "rgba(255,255,255,0.12)",
+                fontWeight: 900,
+              }}
+            >
+              {(fullName?.trim()?.[0] || email?.[0] || "A").toUpperCase()}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <strong
+                style={{
+                  display: "block",
+                  fontSize: "12px",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {fullName?.trim() || "Eczane Kullanıcısı"}
+              </strong>
+              <small
+                style={{
+                  display: "block",
+                  marginTop: "2px",
+                  opacity: 0.7,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {company?.name ?? "Eczane"}
+              </small>
+            </div>
+          </div>
+
+          <button className="logout-btn" onClick={logout}>
+            Çıkış Yap
+          </button>
+        </div>
       </aside>
 
       <section className="insight-content">
@@ -1396,6 +1515,26 @@ export default function DashboardPage() {
                 </button>
               </div>
             )}
+
+            <button
+              type="button"
+              onClick={() => setIsAssistantDrawerOpen(true)}
+              aria-label="AYÇA Asistanı aç"
+              title="AYÇA Asistan"
+              style={{
+                border: "1px solid rgba(124, 58, 237, 0.18)",
+                borderRadius: "12px",
+                padding: "10px 14px",
+                background:
+                  "linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)",
+                color: "#fff",
+                fontWeight: 900,
+                cursor: "pointer",
+                boxShadow: "0 10px 24px rgba(124, 58, 237, 0.18)",
+              }}
+            >
+              ✧ AYÇA Asistan
+            </button>
 
             <span className="avatar">A</span>
           </div>
@@ -1503,17 +1642,6 @@ export default function DashboardPage() {
                 <strong>{metrics?.critical_stock_count ?? "-"}</strong>
                 <p>Acil kontrol gerektiren ürün</p>
                 <em className="navigation-hint">Ürünleri aç →</em>
-              </button>
-              <button
-                type="button"
-                className="insight-kpi kpi-orange dashboard-navigation-card"
-                onClick={() => navigateToModule("🤖 AYÇA Asistan")}
-              >
-                <b>🧪</b>
-                <span>Veri Güveni</span>
-                <strong>{hasAnalysis ? `%${analysisConfidenceScore}` : "-"}</strong>
-                <p>Analiz motorlarının doğrulama oranı</p>
-                <em className="navigation-hint">AYÇA’ya sor →</em>
               </button>
               <button
                 type="button"
@@ -3593,6 +3721,209 @@ export default function DashboardPage() {
         </AnimatedPage>
         )}
       </section>
+
+      {isAssistantDrawerOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="AYÇA Asistan panelini kapat"
+            onClick={() => setIsAssistantDrawerOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 1998,
+              border: 0,
+              background: "rgba(15, 23, 42, 0.22)",
+              backdropFilter: "blur(2px)",
+              cursor: "default",
+            }}
+          />
+
+          <aside
+            aria-label="AYÇA Asistan"
+            style={{
+              position: "fixed",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: "min(440px, 94vw)",
+              zIndex: 1999,
+              display: "flex",
+              flexDirection: "column",
+              background: "#ffffff",
+              borderLeft: "1px solid #e5e7eb",
+              boxShadow: "-24px 0 70px rgba(15, 23, 42, 0.18)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "18px 20px",
+                borderBottom: "1px solid #eef0f4",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 13,
+                    display: "grid",
+                    placeItems: "center",
+                    color: "#fff",
+                    fontWeight: 900,
+                    background:
+                      "linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)",
+                  }}
+                >
+                  A
+                </div>
+                <div>
+                  <strong style={{ display: "block", fontSize: 16 }}>
+                    AYÇA Asistan
+                  </strong>
+                  <small style={{ color: "#059669", fontWeight: 700 }}>
+                    ● {analyzeResult ? "Analiz verileri hazır" : "Analiz bekleniyor"}
+                  </small>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAssistantDrawerOpen(false)}
+                aria-label="Kapat"
+                style={{
+                  border: 0,
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: "#f3f4f6",
+                  cursor: "pointer",
+                  fontSize: 18,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                padding: "10px 20px",
+                borderBottom: "1px solid #f1f5f9",
+                background: "#fafafa",
+                fontSize: 11,
+                color: "#64748b",
+              }}
+            >
+              Şu anki bağlam: <b>{activeModule}</b>
+            </div>
+
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "18px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              {copilotMessages.map((message) => (
+                <div
+                  key={message.id}
+                  style={{
+                    alignSelf:
+                      message.role === "user" ? "flex-end" : "flex-start",
+                    maxWidth: "88%",
+                    padding: "11px 13px",
+                    borderRadius:
+                      message.role === "user"
+                        ? "14px 14px 4px 14px"
+                        : "14px 14px 14px 4px",
+                    background:
+                      message.role === "user" ? "#6d28d9" : "#f4f4f7",
+                    color: message.role === "user" ? "#fff" : "#111827",
+                    whiteSpace: "pre-wrap",
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                  }}
+                >
+                  {message.text}
+                </div>
+              ))}
+
+              {isCopilotThinking && (
+                <div
+                  style={{
+                    alignSelf: "flex-start",
+                    padding: "10px 12px",
+                    borderRadius: "14px 14px 14px 4px",
+                    background: "#f4f4f7",
+                    color: "#64748b",
+                    fontSize: 12,
+                  }}
+                >
+                  AYÇA düşünüyor...
+                </div>
+              )}
+            </div>
+
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitCopilotQuestion();
+              }}
+              style={{
+                display: "flex",
+                gap: 10,
+                padding: "16px 18px",
+                borderTop: "1px solid #eef0f4",
+                background: "#fff",
+              }}
+            >
+              <input
+                type="text"
+                value={copilotQuestion}
+                onChange={(event) => setCopilotQuestion(event.target.value)}
+                placeholder="AYÇA'ya soru sorun..."
+                aria-label="AYÇA Asistan sorusu"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  border: "1px solid #d9dce3",
+                  borderRadius: 13,
+                  padding: "12px 14px",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="submit"
+                disabled={!copilotQuestion.trim() || isCopilotThinking}
+                style={{
+                  width: 46,
+                  border: 0,
+                  borderRadius: 13,
+                  background:
+                    "linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)",
+                  color: "#fff",
+                  fontSize: 18,
+                  cursor:
+                    !copilotQuestion.trim() || isCopilotThinking
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity:
+                    !copilotQuestion.trim() || isCopilotThinking ? 0.55 : 1,
+                }}
+              >
+                ➤
+              </button>
+            </form>
+          </aside>
+        </>
+      )}
     </main>
   );
 }
