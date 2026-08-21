@@ -299,9 +299,11 @@ export default function DashboardPage() {
     {
       id: 1,
       role: "assistant",
-      text: "Merhaba, ben AYÇA Copilot. Stok, finans, risk, doktor ve hasta verileriniz hakkında soru sorabilirsiniz.",
+      text:
+        "Merhaba 👋 Ben AYÇA. Eczanenizin verilerini sizinle birlikte yorumlamak için buradayım. Stok, sipariş, finans, doktor ve hasta verileriniz hakkında bana doğal bir şekilde soru sorabilirsiniz. İsterseniz bugün dikkat etmeniz gereken konularla başlayabiliriz.",
     },
   ]);
+  const [isCopilotThinking, setIsCopilotThinking] = useState(false);
 
   function handlePatientNameVisibility() {
     if (showPatientNames) {
@@ -840,7 +842,7 @@ export default function DashboardPage() {
   async function submitCopilotQuestion(question?: string) {
     const finalQuestion = (question ?? copilotQuestion).trim();
 
-    if (!finalQuestion) return;
+    if (!finalQuestion || isCopilotThinking) return;
 
     const timestamp = Date.now();
 
@@ -881,6 +883,9 @@ export default function DashboardPage() {
 
     setCopilotQuestion("");
     setCopilotTab("ask");
+    setIsCopilotThinking(true);
+
+    const copilotStartedAt = Date.now();
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -1000,6 +1005,17 @@ export default function DashboardPage() {
 Önerilen aksiyon: ${result.recommended_action}`;
       }
 
+      const minimumThinkingTime = 650;
+      const elapsed = Date.now() - copilotStartedAt;
+
+      if (elapsed < minimumThinkingTime) {
+        await new Promise<void>((resolve) =>
+          window.setTimeout(resolve, minimumThinkingTime - elapsed),
+        );
+      }
+
+      setIsCopilotThinking(false);
+
       setCopilotMessages((currentMessages) => [
         ...currentMessages,
         {
@@ -1009,6 +1025,7 @@ export default function DashboardPage() {
         },
       ]);
     } catch (error) {
+      setIsCopilotThinking(false);
       console.error("Copilot error:", error);
 
       const message =
@@ -3809,6 +3826,7 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           key={question}
+                          disabled={isCopilotThinking}
                           onClick={() => submitCopilotQuestion(question)}
                         >
                           {question}
@@ -3827,6 +3845,20 @@ export default function DashboardPage() {
                           <p>{message.text}</p>
                         </div>
                       ))}
+
+                      {isCopilotThinking && (
+                        <div className="copilot-message assistant copilot-thinking">
+                          <span>AYÇA</span>
+                          <div className="copilot-thinking-content">
+                            <div className="copilot-thinking-dots" aria-hidden="true">
+                              <i />
+                              <i />
+                              <i />
+                            </div>
+                            <p>Verilerinizi inceliyorum...</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="copilot-input-row">
                       <textarea
@@ -3835,18 +3867,24 @@ export default function DashboardPage() {
                           setCopilotQuestion(event.target.value)
                         }
                         onKeyDown={(event) => {
-                          if (event.key === "Enter" && !event.shiftKey) {
+                          if (
+                            event.key === "Enter" &&
+                            !event.shiftKey &&
+                            !isCopilotThinking
+                          ) {
                             event.preventDefault();
                             submitCopilotQuestion();
                           }
                         }}
                         placeholder="Örneğin: Bugün ne yapmalıyım?"
+                        disabled={isCopilotThinking}
                       />
                       <button
                         type="button"
+                        disabled={isCopilotThinking}
                         onClick={() => submitCopilotQuestion()}
                       >
-                        Gönder →
+                        {isCopilotThinking ? "AYÇA düşünüyor..." : "Gönder →"}
                       </button>
                     </div>
                   </div>

@@ -3525,3 +3525,22 @@ select:hover {
 .dashboard-navigation-row:hover {
   background: rgba(124, 58, 237, 0.05);
 }
+
+/* AYÇA Copilot - Soft user message */
+
+.copilot-message.user {
+  background: #f3e8ff !important;
+  border: 1px solid #e9d5ff !important;
+  color: #5b21b6 !important;
+  box-shadow: none !important;
+}
+
+.copilot-message.user > span {
+  color: #7c3aed !important;
+  opacity: 1 !important;
+}
+
+.copilot-message.user p {
+  color: #4c1d95 !important;
+  font-weight: 600;
+}
