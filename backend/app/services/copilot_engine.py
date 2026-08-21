@@ -20,6 +20,14 @@ COPILOT_INTENTS = {
         "almalıyiz",
         "bütçe",
     ],
+    "product": [
+        "ürün",
+        "ürünüm",
+        "ürünler",
+        "ilaç",
+        "ilac",
+        "barkod",
+    ],
     "finance": [
         "ciro",
         "kâr",
@@ -75,6 +83,10 @@ INTENT_GUIDANCE = {
     "order": (
         "Sipariş sorularında toplam öneri sayısı, tahmini bütçe, "
         "öncelik ve top_suggestions verilerini kullan."
+    ),
+    "product": (
+        "Ürün sorularında Product Intelligence içindeki ürün bazlı stok, satış, "
+        "ciro, kâr, marj, stok günü, bağlı sermaye ve sipariş sinyallerini kullan."
     ),
     "finance": (
         "Finans sorularında ciro, kâr, kâr marjı, ortalama satış "
@@ -138,6 +150,18 @@ def detect_intent(question: str | None) -> dict:
                 scores[intent] += 1
                 matched_keywords[intent].append(keyword)
 
+    if any(
+        word in normalized
+        for word in [
+            "ürün",
+            "ürünüm",
+            "ürünler",
+            "ilaç",
+            "ilac",
+        ]
+    ):
+        scores["product"] += 2
+
     best_intent = "general"
     best_score = 0
 
@@ -183,6 +207,9 @@ def build_copilot_context(
     )
     patient = _safe_dict(
         analysis.get("patient_metrics")
+    )
+    product_intelligence = _safe_dict(
+        analysis.get("product_intelligence")
     )
     decision = _safe_dict(
         analysis.get("decision_summary")
@@ -336,6 +363,43 @@ def build_copilot_context(
             ),
             "products": _safe_list(
                 expiry.get("products")
+            )[:50],
+        }
+
+    if intent in {"product", "general"}:
+        context["product"] = {
+            "product_count": product_intelligence.get(
+                "product_count",
+                0,
+            ),
+            "analysis_period_days": product_intelligence.get(
+                "analysis_period_days"
+            ),
+            "products": _safe_list(
+                product_intelligence.get("products")
+            )[:500],
+            "top_selling_products": _safe_list(
+                product_intelligence.get("top_selling_products")
+            )[:50],
+            "top_turnover_products": _safe_list(
+                product_intelligence.get("top_turnover_products")
+            )[:50],
+            "top_profit_products": _safe_list(
+                product_intelligence.get("top_profit_products")
+            )[:50],
+            "critical_high_demand_products": _safe_list(
+                product_intelligence.get(
+                    "critical_high_demand_products"
+                )
+            )[:50],
+            "capital_locked_products": _safe_list(
+                product_intelligence.get("capital_locked_products")
+            )[:50],
+            "low_margin_products": _safe_list(
+                product_intelligence.get("low_margin_products")
+            )[:50],
+            "dead_products": _safe_list(
+                product_intelligence.get("dead_products")
             )[:50],
         }
 
@@ -619,6 +683,35 @@ def detect_sub_intent(
         ):
             return "list_churn_patients"
 
+        if any(
+            phrase in q
+            for phrase in [
+                "en iyi",
+                "en güçlü",
+                "en guclu",
+                "en çok kazandıran",
+                "en cok kazandiran",
+                "en çok ciro",
+                "en cok ciro",
+                "en yüksek ciro",
+                "en yuksek ciro",
+                "top",
+                "ilk ",
+            ]
+        ) and any(
+            word in q
+            for word in [
+                "kim",
+                "hasta",
+                "müşteri",
+                "musteri",
+                "liste",
+                "göster",
+                "goster",
+            ]
+        ):
+            return "top_patients"
+
         return "patient_summary"
 
     if intent == "stock":
@@ -669,6 +762,103 @@ def detect_sub_intent(
             return "order_list"
 
         return "order_summary"
+
+    if intent == "product":
+        if any(
+            phrase in q
+            for phrase in [
+                "en çok kâr",
+                "en cok kar",
+                "en çok kar",
+                "en fazla kâr",
+                "en fazla kar",
+                "kâr bırakan",
+                "kar bırakan",
+                "kazandıran",
+            ]
+        ):
+            return "product_top_profit"
+
+        if any(
+            phrase in q
+            for phrase in [
+                "en çok ciro",
+                "en cok ciro",
+                "en yüksek ciro",
+                "en yuksek ciro",
+                "satış tutarı",
+                "satis tutari",
+            ]
+        ):
+            return "product_top_turnover"
+
+        if any(
+            phrase in q
+            for phrase in [
+                "en çok satan",
+                "en cok satan",
+                "en fazla satan",
+                "çok satan",
+                "cok satan",
+            ]
+        ):
+            return "product_top_selling"
+
+        if any(
+            phrase in q
+            for phrase in [
+                "satışı yüksek ama stoğu kritik",
+                "satışı yüksek ama stoku kritik",
+                "çok satıyor ama stok",
+                "cok satiyor ama stok",
+                "yüksek talep",
+                "kritik talep",
+            ]
+        ):
+            return "product_critical_high_demand"
+
+        if any(
+            phrase in q
+            for phrase in [
+                "ölü stokta en fazla",
+                "olu stokta en fazla",
+                "ölü stokta para",
+                "olu stokta para",
+                "en fazla para bağ",
+                "en fazla para bag",
+                "bağlı sermaye",
+                "bagli sermaye",
+                "stokta para",
+            ]
+        ):
+            return "product_capital_locked"
+
+        if any(
+            phrase in q
+            for phrase in [
+                "düşük marj",
+                "dusuk marj",
+                "az kâr",
+                "az kar",
+                "kâr bırakmayan",
+                "kar birakmayan",
+                "satıyor ama kâr",
+                "satiyor ama kar",
+            ]
+        ):
+            return "product_low_margin"
+
+        if any(
+            phrase in q
+            for phrase in [
+                "ölü stok",
+                "olu stok",
+                "hareketsiz",
+            ]
+        ):
+            return "product_dead"
+
+        return "product_summary"
 
     if intent == "finance":
         if "ciro" in q:
@@ -857,6 +1047,144 @@ def _build_budget_order_plan(
     return selected, used_budget
 
 
+def _extract_requested_limit(
+    question: str | None,
+    default: int = 10,
+    maximum: int = 50,
+) -> int:
+    q = normalize_question(question)
+
+    match = re.search(
+        r"(?:ilk|top|en iyi|en güçlü|en guclu)\s+(\d{1,2})",
+        q,
+    )
+    if not match:
+        match = re.search(
+            r"\b(\d{1,2})\s+(?:hasta|müşteri|musteri|doktor|hekim|ürün|ürünüm|ürünler|ilaç|ilac)\b",
+            q,
+        )
+
+    if not match:
+        match = re.search(r"\b(\d{1,2})\b", q)
+
+    if not match:
+        return default
+
+    try:
+        return max(1, min(int(match.group(1)), maximum))
+    except (TypeError, ValueError):
+        return default
+
+
+def _numeric_value(item: dict, keys: list[str]) -> float:
+    for key in keys:
+        value = item.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def _sort_patients_for_value(patients: list[dict]) -> list[dict]:
+    """
+    Hasta kayıtlarını yalnızca analiz context'inde mevcut doğrulanmış
+    sayısal alanlara göre sıralar. Öncelik ciro/harcama katkısıdır;
+    eşitlikte işlem/reçete sıklığı kullanılır.
+    """
+    return sorted(
+        patients,
+        key=lambda item: (
+            _numeric_value(
+                item,
+                [
+                    "turnover",
+                    "total_turnover",
+                    "total_spend",
+                    "total_sales",
+                    "revenue",
+                    "ciro",
+                    "toplam_ciro",
+                    "Toplam Ciro",
+                ],
+            ),
+            _numeric_value(
+                item,
+                [
+                    "transaction_count",
+                    "prescription_count",
+                    "purchase_count",
+                    "visit_count",
+                    "sales_count",
+                    "işlem_sayısı",
+                    "islem_sayisi",
+                ],
+            ),
+        ),
+        reverse=True,
+    )
+
+
+def _product_list_answer(
+    *,
+    question: str,
+    context: dict,
+    source_key: str,
+    intro: str,
+    metric_key: str | None = None,
+    metric_label: str | None = None,
+    action: str | None = None,
+) -> tuple[str, list[dict], str | None]:
+    product = _safe_dict(
+        context.get("product")
+    )
+    requested_limit = _extract_requested_limit(
+        question,
+        default=10,
+        maximum=50,
+    )
+    rows = _safe_list(
+        product.get(source_key)
+    )
+    items = rows[:requested_limit]
+
+    if not items:
+        return (
+            "Bu ürün sıralaması için yeterli doğrulanmış ürün verisi bulunmuyor.",
+            [],
+            action,
+        )
+
+    answer = (
+        f"Tabii, ürün verilerinizi inceledim. {intro} "
+        f"İlk {len(items)} ürün listelendi."
+    )
+
+    first = items[0]
+    first_name = str(
+        first.get("product_name")
+        or "Bilinmeyen ürün"
+    )
+
+    if metric_key and metric_label:
+        metric_value = _numeric_value(
+            first,
+            [metric_key],
+        )
+        answer += (
+            f" İlk sırada {first_name} var; "
+            f"{metric_label} {_format_number(metric_value, 2)}."
+        )
+    else:
+        answer += (
+            f" İlk sırada {first_name} bulunuyor."
+        )
+
+    return answer, items, action
+
+
 def create_deterministic_answer(
     question: str,
     analysis_result: dict | None,
@@ -926,6 +1254,68 @@ def create_deterministic_answer(
             answer = (
                 f"Kayıp riski sayısı {count or 0}; "
                 "hasta bazlı doğrulanmış risk listesi bulunmuyor."
+            )
+
+    elif sub_intent == "top_patients":
+        patient = _safe_dict(
+            context.get("patient")
+        )
+        patients = _safe_list(
+            patient.get("patients")
+        )
+        requested_limit = _extract_requested_limit(
+            question,
+            default=10,
+            maximum=50,
+        )
+
+        ranked_patients = _sort_patients_for_value(
+            patients
+        )
+        items = ranked_patients[:requested_limit]
+
+        if items:
+            first = items[0]
+            name = (
+                first.get("patient_name")
+                or first.get("customer_name")
+                or first.get("name")
+                or "Bilinmeyen hasta"
+            )
+            first_turnover = _numeric_value(
+                first,
+                [
+                    "turnover",
+                    "total_turnover",
+                    "total_spend",
+                    "total_sales",
+                    "revenue",
+                    "ciro",
+                    "toplam_ciro",
+                    "Toplam Ciro",
+                ],
+            )
+
+            answer = (
+                f"Tabii, hasta verilerinizi ciro katkısı ve işlem sıklığına göre "
+                f"inceledim. İlk {len(items)} hasta listelendi. "
+                f"Bu sıralamada ilk sırada {name} bulunuyor."
+            )
+
+            if first_turnover > 0:
+                answer += (
+                    f" Doğrulanmış ciro katkısı "
+                    f"{_format_number(first_turnover, 2)} TL."
+                )
+
+            action = (
+                "Bu hastaların son dönem alışveriş hareketlerini ve "
+                "kayıp riskini birlikte takip et."
+            )
+        else:
+            answer = (
+                "En iyi hastaları sıralayabilmek için hasta bazlı "
+                "doğrulanmış kayıt bulunmuyor."
             )
 
     elif sub_intent == "patient_summary":
@@ -1086,6 +1476,129 @@ def create_deterministic_answer(
                 f" İlk {len(items)} öncelikli öneri listelendi."
             )
 
+    elif sub_intent == "product_top_profit":
+        answer, items, action = _product_list_answer(
+            question=question,
+            context=context,
+            source_key="top_profit_products",
+            intro="En çok kâr bırakan ürünleri kâr tutarına göre sıraladım.",
+            metric_key="profit",
+            metric_label="kârı",
+            action=(
+                "Yüksek kârlı ürünlerin stok seviyesini koru; "
+                "kritik stok sinyali olanları siparişte öne al."
+            ),
+        )
+
+    elif sub_intent == "product_top_turnover":
+        answer, items, action = _product_list_answer(
+            question=question,
+            context=context,
+            source_key="top_turnover_products",
+            intro="En yüksek ciro üreten ürünleri sıraladım.",
+            metric_key="turnover",
+            metric_label="cirosu",
+            action=(
+                "Yüksek ciro üreten ürünlerin stok sürekliliğini yakından takip et."
+            ),
+        )
+
+    elif sub_intent == "product_top_selling":
+        answer, items, action = _product_list_answer(
+            question=question,
+            context=context,
+            source_key="top_selling_products",
+            intro="En çok satan ürünleri satış adedine göre sıraladım.",
+            metric_key="quantity_sold",
+            metric_label="satış adedi",
+            action=(
+                "Yüksek satış hızlı ürünlerde stok günü düşük olanları siparişte öne al."
+            ),
+        )
+
+    elif sub_intent == "product_critical_high_demand":
+        answer, items, action = _product_list_answer(
+            question=question,
+            context=context,
+            source_key="critical_high_demand_products",
+            intro="Satışı yüksek olup stok riski taşıyan ürünleri öne çıkardım.",
+            metric_key="stock_days",
+            metric_label="stok günü",
+            action=(
+                "Bu ürünleri satış hızı ve stok gününe göre öncelikli sipariş listesine al."
+            ),
+        )
+
+    elif sub_intent == "product_capital_locked":
+        product = _safe_dict(
+            context.get("product")
+        )
+        requested_limit = _extract_requested_limit(
+            question,
+            default=10,
+            maximum=50,
+        )
+        rows = _safe_list(
+            product.get("dead_products")
+        ) or _safe_list(
+            product.get("capital_locked_products")
+        )
+        items = rows[:requested_limit]
+
+        if items:
+            first = items[0]
+            answer = (
+                "Ölü/hareketsiz stokta en fazla sermaye bağlayan ürünleri "
+                f"stok değerine göre sıraladım. İlk {len(items)} ürün listelendi. "
+                f"İlk sırada {first.get('product_name', 'Bilinmeyen ürün')} var; "
+                f"stok değeri {_format_number(first.get('stock_value'), 2)} TL."
+            )
+        else:
+            answer = (
+                "Ölü/hareketsiz stokta bağlı sermayeyi sıralayacak "
+                "yeterli doğrulanmış ürün verisi bulunmuyor."
+            )
+
+        action = (
+            "Bu ürünlerde yeni siparişi durdur; iade, transfer veya stok eritme seçeneklerini değerlendir."
+        )
+
+    elif sub_intent == "product_low_margin":
+        answer, items, action = _product_list_answer(
+            question=question,
+            context=context,
+            source_key="low_margin_products",
+            intro="Satış yapmasına rağmen marjı düşük ürünleri sıraladım.",
+            metric_key="profit_margin",
+            metric_label="kâr marjı %",
+            action=(
+                "Düşük marjlı ürünlerde alış maliyeti ve satış fiyatını gözden geçir."
+            ),
+        )
+
+    elif sub_intent == "product_dead":
+        answer, items, action = _product_list_answer(
+            question=question,
+            context=context,
+            source_key="dead_products",
+            intro="Ölü veya hareketsiz ürünleri bağlı stok değerine göre sıraladım.",
+            metric_key="stock_value",
+            metric_label="stok değeri",
+            action=(
+                "Bu ürünlerde yeni siparişi durdur ve stok eritme seçeneklerini değerlendir."
+            ),
+        )
+
+    elif sub_intent == "product_summary":
+        product = _safe_dict(
+            context.get("product")
+        )
+        answer = (
+            f"Product Intelligence kapsamında "
+            f"{product.get('product_count', 0)} ürün analiz edildi. "
+            "Satış, ciro, kâr, stok ve sipariş sinyalleri birlikte değerlendirilebilir."
+        )
+
     elif sub_intent in {
         "finance_summary",
         "turnover",
@@ -1152,7 +1665,12 @@ def create_deterministic_answer(
             )
         )
 
-        items = doctors[:10]
+        requested_limit = _extract_requested_limit(
+            question,
+            default=10,
+            maximum=50,
+        )
+        items = doctors[:requested_limit]
 
         if items:
             first = items[0]

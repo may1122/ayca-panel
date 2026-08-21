@@ -14,6 +14,9 @@ from app.services.inventory_intelligence_engine import calculate_expiry_metrics
 from app.services.morning_briefing_engine import create_morning_briefing
 from app.services.order_engine import calculate_order_suggestions
 from app.services.patient_engine import calculate_patient_metrics
+from app.services.product_intelligence_engine import (
+    calculate_product_intelligence,
+)
 from app.services.report_engine import create_analysis_report
 from app.services.risk_engine import calculate_risk_metrics
 from app.services.supabase_client import supabase
@@ -195,6 +198,7 @@ def _engine_status(
     for name, result in engines.items():
         if not result.get("success"):
             error = result.get("error")
+
             if error:
                 warnings.append(
                     f"{name}: {error}"
@@ -202,6 +206,7 @@ def _engine_status(
 
         for warning in result.get("warnings", []):
             warning_text = f"{name}: {warning}"
+
             if warning_text not in warnings:
                 warnings.append(warning_text)
 
@@ -212,9 +217,11 @@ def _engine_status(
             else "partial"
         )
         overall_success = True
+
     elif critical_success_count >= 2:
         status = "partial"
         overall_success = True
+
     else:
         status = "failed"
         overall_success = False
@@ -250,11 +257,13 @@ def build_analysis(
         payload.inventory_path,
         "Envanter",
     )
+
     validate_storage_path(
         payload.company_id,
         payload.sales_path,
         "Satış",
     )
+
     validate_storage_path(
         payload.company_id,
         payload.product_path,
@@ -265,10 +274,12 @@ def build_analysis(
         payload.inventory_path,
         "Envanter",
     )
+
     sales_df = load_dataframe(
         payload.sales_path,
         "Satış",
     )
+
     product_df = load_dataframe(
         payload.product_path,
         "Ürün satış",
@@ -302,6 +313,23 @@ def build_analysis(
         product_df=product_df,
     )
 
+    # ---------------------------------------------------------
+    # AYÇA PRODUCT INTELLIGENCE V1
+    # Envanter + Ürün Bazında Toplamlar verisini birleştirir.
+    # ---------------------------------------------------------
+
+    product_intelligence = calculate_product_intelligence(
+        inventory_df=inventory_df,
+        product_df=product_df,
+    )
+
+    # Product Intelligence'ı şimdilik engine_status içine
+    # dahil etmiyoruz.
+    #
+    # Önce gerçek eczane verileriyle doğrulayacağız.
+    # Böylece yeni motorun olası bir problemi mevcut çalışan
+    # analiz sisteminin complete/partial durumunu etkilemez.
+
     engine_status = _engine_status(
         inventory_metrics=inventory_metrics,
         finance_metrics=finance_metrics,
@@ -317,7 +345,9 @@ def build_analysis(
         order_suggestions=order_suggestions,
         risk_metrics=risk_metrics,
         expiry_metrics=expiry_metrics,
-        analysis_confidence_score=engine_status["confidence_score"],
+        analysis_confidence_score=engine_status[
+            "confidence_score"
+        ],
     )
 
     morning_briefing = create_morning_briefing(
@@ -350,7 +380,9 @@ def build_analysis(
             "failed_engines"
         ],
         "analysis_warnings": engine_status["warnings"],
+
         "company": company,
+
         "files": {
             "inventory": {
                 "storage_path": payload.inventory_path,
@@ -362,12 +394,17 @@ def build_analysis(
                 "storage_path": payload.product_path,
             },
         },
+
         "inventory_metrics": inventory_metrics,
         "finance_metrics": finance_metrics,
         "order_suggestions": order_suggestions,
         "risk_metrics": risk_metrics,
         "expiry_metrics": expiry_metrics,
         "patient_metrics": patient_metrics,
+
+        # AYÇA Product Intelligence V1
+        "product_intelligence": product_intelligence,
+
         "morning_briefing": morning_briefing,
         "decision_summary": decision_summary,
         "dashboard_metrics": dashboard_metrics,
