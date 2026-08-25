@@ -372,6 +372,10 @@ export default function DashboardPage() {
   const [isCopilotThinking, setIsCopilotThinking] = useState(false);
   const [isAssistantDrawerOpen, setIsAssistantDrawerOpen] = useState(false);
 
+  const hasConversationStarted = copilotMessages.some(
+    (message) => message.role === "user",
+  );
+
   function handlePatientNameVisibility() {
     if (showPatientNames) {
       setShowPatientNames(false);
@@ -905,6 +909,20 @@ export default function DashboardPage() {
     Yeni: patientList.filter((patient) => patient.segment === "Yeni").length,
   };
 
+  const dashboardRiskChartData = [
+    { name: "Sıfır Stok", value: zeroStockCount },
+    { name: "Kritik", value: criticalStockCount },
+    { name: "Fazla", value: overStockCount ?? 0 },
+    { name: "Ölü Stok", value: deadStockCount },
+  ];
+
+  const dashboardPatientSegmentData = [
+    { name: "VIP", value: patientSegmentCounts.VIP },
+    { name: "Sadık", value: patientSegmentCounts.Sadık },
+    { name: "Aktif", value: patientSegmentCounts.Aktif },
+    { name: "Yeni", value: patientSegmentCounts.Yeni },
+  ].filter((item) => item.value > 0);
+
   const filteredSegmentPatientList = filteredPatientList.filter((patient) =>
     patientSegmentFilter === "all"
       ? true
@@ -929,6 +947,45 @@ export default function DashboardPage() {
         const normalizedName = normalizeSearchText(fullName);
         return normalizedName.length >= 4 && normalizedQuestion.includes(normalizedName);
       })?.patient_name_full?.trim() ?? null
+    );
+  }
+
+  function looksLikePatientFollowup(question: string) {
+    const normalized = normalizeSearchText(question);
+
+    const patientSignals = [
+      "son ziyaret",
+      "en son ne zaman",
+      "ne zaman geldi",
+      "kaç kere",
+      "kaç kez",
+      "kaç defa",
+      "ziyaret say",
+      "toplam ne kadar alışveriş",
+      "toplam ciro",
+      "cirosu",
+      "harcama",
+      "kayıp riski",
+      "kayip riski",
+      "risk neden",
+      "hangi doktor",
+      "hangi hekim",
+      "doktorlardan",
+      "hekimlerden",
+      "hangi ilaç",
+      "hangi ilac",
+      "hangi ürün",
+      "hangi urun",
+      "son aldığı",
+      "son aldigi",
+      "geri kazan",
+      "geri get",
+      "segmenti",
+      "segment",
+    ];
+
+    return patientSignals.some((signal) =>
+      normalized.includes(normalizeSearchText(signal)),
     );
   }
 
@@ -1134,8 +1191,14 @@ export default function DashboardPage() {
     if (!finalQuestion || isCopilotThinking) return;
 
     const patientNameInQuestion = resolvePatientNameFromQuestion(finalQuestion);
-    const resolvedPatientContext =
-      patientNameInQuestion ?? activePatientContextName;
+    const shouldUsePatientContext =
+      Boolean(patientNameInQuestion) ||
+      (Boolean(activePatientContextName) &&
+        looksLikePatientFollowup(finalQuestion));
+
+    const resolvedPatientContext = shouldUsePatientContext
+      ? patientNameInQuestion ?? activePatientContextName
+      : null;
 
     if (patientNameInQuestion) {
       setActivePatientContextName(patientNameInQuestion);
@@ -1385,7 +1448,85 @@ export default function DashboardPage() {
         />
       )}
       <aside className="insight-sidebar">
-        <div className="insight-logo">AYÇA Insight</div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "4px 8px 14px",
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 14,
+              display: "grid",
+              placeItems: "center",
+              flex: "0 0 auto",
+              background: "rgba(255,255,255,0.10)",
+              border: "1px solid rgba(255,255,255,0.14)",
+            }}
+          >
+            <svg
+              width="31"
+              height="31"
+              viewBox="0 0 64 64"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient id="ayca-sidebar-gradient" x1="8" y1="10" x2="56" y2="54">
+                  <stop stopColor="#7C3AED" />
+                  <stop offset="0.55" stopColor="#3B82F6" />
+                  <stop offset="1" stopColor="#2DD4BF" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M12 47L27 15L40 47M18.5 34H34"
+                stroke="url(#ayca-sidebar-gradient)"
+                strokeWidth="6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M34 42L44 25L52 42"
+                stroke="url(#ayca-sidebar-gradient)"
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="51" cy="15" r="3.5" fill="#A855F7" />
+            </svg>
+          </span>
+
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 18,
+                lineHeight: 1,
+                fontWeight: 950,
+                letterSpacing: "-0.03em",
+                color: "#fff",
+              }}
+            >
+              AYÇA
+            </div>
+            <div
+              style={{
+                marginTop: 5,
+                fontSize: 10,
+                lineHeight: 1,
+                fontWeight: 900,
+                letterSpacing: ".24em",
+                color: "#67e8f9",
+              }}
+            >
+              INSIGHT
+            </div>
+          </div>
+        </div>
         <p className="sidebar-subtitle">Eczane Yönetim Zekâsı</p>
 
         <nav>
@@ -1521,104 +1662,170 @@ export default function DashboardPage() {
       </aside>
 
       <section className="insight-content">
-        <header className="insight-header">
-          <div>
-            <span className="eyebrow">AYÇA Insight Platform</span>
-            <h1>Günaydın, {fullName?.trim() || "Hoş geldiniz"} 👋</h1>
-            <p>
-              {company?.name ?? "İdil Eczanesi"} · {email}
+        <header
+          className="insight-header"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 22,
+            padding: "22px 26px",
+            borderRadius: 24,
+            border: "1px solid rgba(14, 165, 233, .10)",
+            background:
+              "linear-gradient(135deg, rgba(255,255,255,.98) 0%, rgba(241,250,248,.97) 48%, rgba(239,246,255,.98) 100%)",
+            boxShadow: "0 16px 44px rgba(15,23,42,.055)",
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              right: 170,
+              top: -48,
+              width: 260,
+              height: 180,
+              borderRadius: "50%",
+              background:
+                "radial-gradient(circle, rgba(45,212,191,.10) 0%, rgba(96,165,250,.06) 45%, transparent 72%)",
+              pointerEvents: "none",
+            }}
+          />
+
+          <div style={{ minWidth: 0, position: "relative", zIndex: 1 }}>
+            <span
+              style={{
+                display: "block",
+                marginBottom: 12,
+                fontSize: 12,
+                fontWeight: 900,
+                letterSpacing: ".02em",
+                color: "#0f8a6c",
+              }}
+            >
+              Akıllı Yazılım Çözüm Asistanı
+            </span>
+
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "clamp(30px, 3vw, 48px)",
+                lineHeight: 1,
+                color: "#101542",
+                letterSpacing: "-.035em",
+              }}
+            >
+              Günaydın, {fullName?.trim() || "Hoş geldiniz"} 👋
+            </h1>
+
+            <p
+              style={{
+                margin: "12px 0 0",
+                color: "#64748b",
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
+              {company?.name ?? "Eczane"} · {email}
             </p>
           </div>
 
-          <div className="header-actions">
-            <select
-              value={financePeriod}
-              onChange={(event) => {
-                const nextPeriod =
-                  event.target.value as FinancePeriod;
-                setFinancePeriod(nextPeriod);
-                setWeekOffset(0);
-              }}
-              aria-label="Finans dönemi"
-              title="Ciro ve kâr dönemini seç"
-            >
-              <option value="week">Bu Hafta</option>
-              <option value="month">Bu Ay</option>
-              <option value="3months">Son 3 Ay</option>
-              <option value="year">Bu Yıl</option>
-              <option value="all">Tümü</option>
-            </select>
-
-            {financePeriod === "week" && (
-              <div
-                aria-label="Hafta seçimi"
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              flex: "0 0 auto",
+              position: "relative",
+              zIndex: 1,
+            }}
+          >
+            <div style={{ display: "grid", gap: 7 }}>
+              <select
+                value={financePeriod}
+                onChange={(event) => {
+                  const nextPeriod = event.target.value as FinancePeriod;
+                  setFinancePeriod(nextPeriod);
+                  setWeekOffset(0);
+                }}
+                aria-label="Finans dönemi"
+                title="Ciro ve kâr dönemini seç"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
+                  minWidth: 118,
+                  minHeight: 42,
+                  padding: "8px 34px 8px 12px",
+                  borderRadius: 12,
+                  border: "1px solid #cbd5e1",
+                  background: "#fff",
+                  color: "#0f172a",
+                  fontSize: 12,
+                  fontWeight: 850,
+                  boxShadow: "0 5px 14px rgba(15,23,42,.05)",
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setWeekOffset((current) =>
-                      Math.min(
-                        current + 1,
-                        Math.max(financeWeekMetrics.length - 1, 0),
-                      ),
-                    )
-                  }
-                  disabled={!canGoToPreviousWeek}
-                  title="Önceki hafta"
-                >
-                  ←
-                </button>
+                <option value="week">Bu Hafta</option>
+                <option value="month">Bu Ay</option>
+                <option value="3months">Son 3 Ay</option>
+                <option value="year">Bu Yıl</option>
+                <option value="all">Tümü</option>
+              </select>
 
-                <span
-                  title={financePeriodDateLabel}
+              {financePeriod === "week" && (
+                <div
+                  aria-label="Hafta seçimi"
                   style={{
-                    minWidth: 148,
-                    textAlign: "center",
-                    fontSize: 12,
-                    fontWeight: 800,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    fontSize: 9,
+                    color: "#64748b",
                   }}
                 >
-                  {financePeriodLabel}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setWeekOffset((current) =>
-                      Math.max(current - 1, 0),
-                    )
-                  }
-                  disabled={!canGoToNextWeek}
-                  title="Sonraki hafta"
-                >
-                  →
-                </button>
-              </div>
-            )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWeekOffset((current) =>
+                        Math.min(
+                          current + 1,
+                          Math.max(financeWeekMetrics.length - 1, 0),
+                        ),
+                      )
+                    }
+                    disabled={!canGoToPreviousWeek}
+                    title="Önceki hafta"
+                  >
+                    ←
+                  </button>
+                  <span title={financePeriodDateLabel}>{financePeriodLabel}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWeekOffset((current) => Math.max(current - 1, 0))
+                    }
+                    disabled={!canGoToNextWeek}
+                    title="Sonraki hafta"
+                  >
+                    →
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               type="button"
               onClick={() => setIsAssistantDrawerOpen(true)}
-              aria-label="AYÇA Asistanı aç"
+              aria-label="AYÇA Orb Asistanı aç"
               title="AYÇA Asistan"
-              style={{
-                border: "1px solid rgba(124, 58, 237, 0.18)",
-                borderRadius: "12px",
-                padding: "10px 14px",
-                background:
-                  "linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)",
-                color: "#fff",
-                fontWeight: 900,
-                cursor: "pointer",
-                boxShadow: "0 10px 24px rgba(124, 58, 237, 0.18)",
-              }}
+              className="ayca-header-orb-button"
             >
-              ✧ AYÇA Asistan
+              <span className="ayca-header-orb-core">⌁</span>
+              <span
+                aria-hidden="true"
+                className={hasAnalysis ? "ayca-orb-online-dot" : "ayca-orb-offline-dot"}
+              />
             </button>
 
             <span className="avatar">A</span>
@@ -1812,6 +2019,237 @@ export default function DashboardPage() {
                     : "Borç verisi analiz sonucunda bulunamadı"}
                 </p>
                 <em className="navigation-hint">Finansı aç →</em>
+              </button>
+            </section>
+
+            <section
+              aria-label="Dashboard mini analiz grafikleri"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 14,
+                marginBottom: 18,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => navigateToModule("💰 Finans")}
+                style={{
+                  minWidth: 0,
+                  minHeight: 238,
+                  border: "1px solid #e8edf5",
+                  borderRadius: 18,
+                  padding: "16px 16px 12px",
+                  background: "#fff",
+                  boxShadow: "0 10px 26px rgba(15,23,42,.055)",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: "#475569" }}>
+                      💵 Ciro Trendi
+                    </span>
+                    <strong
+                      style={{
+                        display: "block",
+                        marginTop: 7,
+                        fontSize: 23,
+                        color: "#172554",
+                      }}
+                    >
+                      {hasAnalysis ? `${totalTurnover.toLocaleString("tr-TR")} ₺` : "-"}
+                    </strong>
+                    <small style={{ color: "#94a3b8", fontWeight: 700 }}>
+                      Son 7 günlük görünüm
+                    </small>
+                  </div>
+                  <span style={{ color: "#7c3aed", fontWeight: 900 }}>→</span>
+                </div>
+
+                <div style={{ width: "100%", height: 125, marginTop: 9 }}>
+                  {financeDailyRevenue.length ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={financeDailyRevenue}>
+                        <defs>
+                          <linearGradient id="miniRevenueFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#22c55e" stopOpacity={0.28} />
+                            <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <Tooltip
+                          formatter={(value) =>
+                            `${Number(value ?? 0).toLocaleString("tr-TR")} ₺`
+                          }
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="value"
+                          stroke="#16a34a"
+                          strokeWidth={2.3}
+                          fill="url(#miniRevenueFill)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "grid",
+                        placeItems: "center",
+                        color: "#94a3b8",
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Analiz sonrası trend oluşacak
+                    </div>
+                  )}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateToOperation("risk")}
+                style={{
+                  minWidth: 0,
+                  minHeight: 238,
+                  border: "1px solid #e8edf5",
+                  borderRadius: 18,
+                  padding: "16px 16px 12px",
+                  background: "#fff",
+                  boxShadow: "0 10px 26px rgba(15,23,42,.055)",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: "#475569" }}>
+                      📦 Stok Risk Görünümü
+                    </span>
+                    <strong
+                      style={{
+                        display: "block",
+                        marginTop: 7,
+                        fontSize: 23,
+                        color: "#172554",
+                      }}
+                    >
+                      {totalRiskItems}
+                    </strong>
+                    <small style={{ color: "#94a3b8", fontWeight: 700 }}>
+                      Öne çıkan risk sinyalleri
+                    </small>
+                  </div>
+                  <span style={{ color: "#7c3aed", fontWeight: 900 }}>→</span>
+                </div>
+
+                <div style={{ width: "100%", height: 125, marginTop: 9 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={dashboardRiskChartData}>
+                      <XAxis
+                        dataKey="name"
+                        tick={{ fontSize: 9, fill: "#64748b" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip />
+                      <Bar dataKey="value" radius={[7, 7, 2, 2]}>
+                        {dashboardRiskChartData.map((_, index) => (
+                          <Cell
+                            key={`risk-mini-${index}`}
+                            fill={["#ef4444", "#f59e0b", "#8b5cf6", "#64748b"][index]}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateToModule("👥 Hasta & Reçete")}
+                style={{
+                  minWidth: 0,
+                  minHeight: 238,
+                  border: "1px solid #e8edf5",
+                  borderRadius: 18,
+                  padding: "16px 16px 12px",
+                  background: "#fff",
+                  boxShadow: "0 10px 26px rgba(15,23,42,.055)",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: "#475569" }}>
+                      👥 Hasta Segmentleri
+                    </span>
+                    <strong
+                      style={{
+                        display: "block",
+                        marginTop: 7,
+                        fontSize: 23,
+                        color: "#172554",
+                      }}
+                    >
+                      {hasAnalysis ? totalPatientCount.toLocaleString("tr-TR") : "-"}
+                    </strong>
+                    <small style={{ color: "#94a3b8", fontWeight: 700 }}>
+                      Toplam hasta
+                    </small>
+                  </div>
+                  <span style={{ color: "#7c3aed", fontWeight: 900 }}>→</span>
+                </div>
+
+                <div style={{ width: "100%", height: 125, marginTop: 9 }}>
+                  {dashboardPatientSegmentData.length ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={dashboardPatientSegmentData}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius={32}
+                          outerRadius={52}
+                          paddingAngle={3}
+                        >
+                          {dashboardPatientSegmentData.map((_, index) => (
+                            <Cell
+                              key={`patient-mini-${index}`}
+                              fill={["#7c3aed", "#a855f7", "#3b82f6", "#14b8a6"][index % 4]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend
+                          verticalAlign="middle"
+                          align="right"
+                          layout="vertical"
+                          iconSize={8}
+                          wrapperStyle={{ fontSize: 9 }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "grid",
+                        placeItems: "center",
+                        color: "#94a3b8",
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Analiz sonrası segmentler oluşacak
+                    </div>
+                  )}
+                </div>
               </button>
             </section>
 
@@ -4273,26 +4711,31 @@ export default function DashboardPage() {
               inset: 0,
               zIndex: 1998,
               border: 0,
-              background: "rgba(15, 23, 42, 0.22)",
+              background: "rgba(15, 23, 42, 0.20)",
               backdropFilter: "blur(2px)",
               cursor: "default",
             }}
           />
 
           <aside
-            aria-label="AYÇA Asistan"
+            aria-label="AYÇA Orb Asistan"
             style={{
               position: "fixed",
-              top: 0,
-              right: 0,
-              bottom: 0,
-              width: "min(440px, 94vw)",
+              top: 12,
+              right: 12,
+              bottom: 12,
+              width: "min(420px, calc(100vw - 24px))",
               zIndex: 1999,
               display: "flex",
               flexDirection: "column",
-              background: "#ffffff",
-              borderLeft: "1px solid #e5e7eb",
-              boxShadow: "-24px 0 70px rgba(15, 23, 42, 0.18)",
+              overflow: "hidden",
+              borderRadius: 24,
+              color: "#18324a",
+              background:
+                "radial-gradient(circle at 50% 20%, rgba(125,211,252,.22), transparent 28%), linear-gradient(180deg, #f8fffd 0%, #eefaf7 48%, #eef7ff 100%)",
+              border: "1px solid rgba(45,212,191,.34)",
+              boxShadow:
+                "-22px 0 60px rgba(15,23,42,.14), 0 0 0 1px rgba(255,255,255,.72), 0 0 34px rgba(56,189,248,.10)",
             }}
           >
             <div
@@ -4301,32 +4744,37 @@ export default function DashboardPage() {
                 alignItems: "center",
                 justifyContent: "space-between",
                 gap: 12,
-                padding: "18px 20px",
-                borderBottom: "1px solid #eef0f4",
+                padding: "17px 18px 12px",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div
-                  style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 13,
-                    display: "grid",
-                    placeItems: "center",
-                    color: "#fff",
-                    fontWeight: 900,
-                    background:
-                      "linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)",
-                  }}
-                >
-                  A
+              <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                <div className="ayca-orb-mini">
+                  <span>⌁</span>
                 </div>
                 <div>
-                  <strong style={{ display: "block", fontSize: 16 }}>
+                  <strong style={{ display: "block", fontSize: 15, color: "#12314a" }}>
                     AYÇA Asistan
                   </strong>
-                  <small style={{ color: "#059669", fontWeight: 700 }}>
-                    ● {analyzeResult ? "Analiz verileri hazır" : "Analiz bekleniyor"}
+                  <small
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      marginTop: 3,
+                      color: hasAnalysis ? "#34d399" : "#94a3b8",
+                      fontWeight: 800,
+                    }}
+                  >
+                    <i
+                      style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: "50%",
+                        background: hasAnalysis ? "#10b981" : "#64748b",
+                        boxShadow: hasAnalysis ? "0 0 12px #10b981" : "none",
+                      }}
+                    />
+                    {hasAnalysis ? "Çevrimiçi · Analiz hazır" : "Analiz bekleniyor"}
                   </small>
                 </div>
               </div>
@@ -4336,11 +4784,12 @@ export default function DashboardPage() {
                 onClick={() => setIsAssistantDrawerOpen(false)}
                 aria-label="Kapat"
                 style={{
-                  border: 0,
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
-                  background: "#f3f4f6",
+                  border: "1px solid rgba(148,163,184,.22)",
+                  width: 34,
+                  height: 34,
+                  borderRadius: "50%",
+                  background: "rgba(255,255,255,.76)",
+                  color: "#475569",
                   cursor: "pointer",
                   fontSize: 18,
                 }}
@@ -4351,44 +4800,198 @@ export default function DashboardPage() {
 
             <div
               style={{
-                padding: "10px 20px",
-                borderBottom: "1px solid #f1f5f9",
-                background: "#fafafa",
-                fontSize: 11,
-                color: "#64748b",
+                padding: "0 18px 8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
-              Şu anki bağlam: <b>{activeModule}</b>
+              <small style={{ color: "#64748b", fontWeight: 750 }}>
+                Bağlam: {activeModule}
+              </small>
+
+              {activePatientContextName && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "5px 7px 5px 9px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(45,212,191,.28)",
+                    background: "rgba(13,148,136,.10)",
+                    color: "#5eead4",
+                    fontSize: 10,
+                    fontWeight: 850,
+                  }}
+                >
+                  ✧ {showPatientNames ? activePatientContextName : "Aktif hasta"}
+                  <button
+                    type="button"
+                    onClick={() => setActivePatientContextName(null)}
+                    aria-label="Aktif hasta bağlamını temizle"
+                    style={{
+                      border: 0,
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      display: "grid",
+                      placeItems: "center",
+                      background: "rgba(45,212,191,.10)",
+                      color: "#5eead4",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              )}
             </div>
+
+            {!hasConversationStarted && (
+              <>
+            <div
+              style={{
+                padding: "4px 18px 10px",
+                textAlign: "center",
+              }}
+            >
+              <div className="ayca-orb-stage" aria-hidden="true">
+                <div className="ayca-orb-ring ayca-orb-ring-one" />
+                <div className="ayca-orb-ring ayca-orb-ring-two" />
+                <div className="ayca-orb-core">
+                  <span>⌁</span>
+                </div>
+              </div>
+
+              <h3
+                style={{
+                  margin: "8px 0 3px",
+                  color: "#fff",
+                  fontSize: 18,
+                }}
+              >
+                Merhaba {fullName?.trim() || "Eczacı"} 👋
+              </h3>
+              <p
+                style={{
+                  margin: 0,
+                  color: "#94a3b8",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}
+              >
+                Verilerinizi birlikte yorumlayalım. Ne öğrenmek istersiniz?
+              </p>
+            </div>
+              </>
+            )}
+
+            {!hasConversationStarted && (
+              <>
+            <div
+              style={{
+                padding: "2px 16px 10px",
+                display: "grid",
+                gap: 7,
+              }}
+            >
+              {[
+                ["🧠", "Bugün ne yapmalıyım?", "Günün önceliklerini göster"],
+                ["⚠️", "Stokta risk var mı?", "Kritik ve riskli stokları listele"],
+                ["💹", "Finansal durumum nasıl?", "Ciro, kâr ve borç durumunu analiz et"],
+              ].map(([icon, question, description]) => (
+                <button
+                  key={question}
+                  type="button"
+                  onClick={() => void submitCopilotQuestion(question)}
+                  disabled={isCopilotThinking}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 11px",
+                    borderRadius: 13,
+                    border: "1px solid rgba(99,102,241,.12)",
+                    background: "rgba(30,41,59,.62)",
+                    color: "#e2e8f0",
+                    textAlign: "left",
+                    cursor: isCopilotThinking ? "wait" : "pointer",
+                    opacity: isCopilotThinking ? 0.6 : 1,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 9,
+                      display: "grid",
+                      placeItems: "center",
+                      background: "rgba(124,58,237,.13)",
+                    }}
+                  >
+                    {icon}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ display: "block", fontSize: 11.5 }}>
+                      {question}
+                    </strong>
+                    <small
+                      style={{
+                        display: "block",
+                        marginTop: 2,
+                        color: "#64748b",
+                        fontSize: 9.5,
+                      }}
+                    >
+                      {description}
+                    </small>
+                  </span>
+                  <span style={{ color: "#64748b" }}>›</span>
+                </button>
+              ))}
+            </div>
+              </>
+            )}
 
             <div
               style={{
                 flex: 1,
                 overflowY: "auto",
-                padding: "18px 20px",
+                minHeight: 110,
+                padding: "8px 16px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 12,
+                gap: 9,
+                borderTop: "1px solid rgba(148,163,184,.08)",
               }}
             >
               {copilotMessages.map((message) => (
                 <div
                   key={message.id}
                   style={{
-                    alignSelf:
-                      message.role === "user" ? "flex-end" : "flex-start",
+                    alignSelf: message.role === "user" ? "flex-end" : "flex-start",
                     maxWidth: "88%",
-                    padding: "11px 13px",
+                    padding: "9px 11px",
                     borderRadius:
                       message.role === "user"
-                        ? "14px 14px 4px 14px"
-                        : "14px 14px 14px 4px",
+                        ? "13px 13px 4px 13px"
+                        : "13px 13px 13px 4px",
                     background:
-                      message.role === "user" ? "#6d28d9" : "#f4f4f7",
-                    color: message.role === "user" ? "#fff" : "#111827",
+                      message.role === "user"
+                        ? "linear-gradient(135deg, #7c3aed, #2563eb)"
+                        : "rgba(255,255,255,.82)",
+                    border:
+                      message.role === "user"
+                        ? "1px solid rgba(167,139,250,.30)"
+                        : "1px solid rgba(148,163,184,.08)",
+                    color: message.role === "user" ? "#fff" : "#29445b",
                     whiteSpace: "pre-wrap",
-                    fontSize: 13,
-                    lineHeight: 1.55,
+                    fontSize: 11.5,
+                    lineHeight: 1.5,
                   }}
                 >
                   {message.text}
@@ -4399,11 +5002,11 @@ export default function DashboardPage() {
                 <div
                   style={{
                     alignSelf: "flex-start",
-                    padding: "10px 12px",
-                    borderRadius: "14px 14px 14px 4px",
-                    background: "#f4f4f7",
-                    color: "#64748b",
-                    fontSize: 12,
+                    padding: "9px 11px",
+                    borderRadius: "13px 13px 13px 4px",
+                    background: "rgba(255,255,255,.82)",
+                    color: "#2563eb",
+                    fontSize: 11,
                   }}
                 >
                   AYÇA düşünüyor...
@@ -4418,44 +5021,47 @@ export default function DashboardPage() {
               }}
               style={{
                 display: "flex",
-                gap: 10,
-                padding: "16px 18px",
-                borderTop: "1px solid #eef0f4",
-                background: "#fff",
+                gap: 8,
+                padding: "12px 14px 14px",
+                borderTop: "1px solid rgba(148,163,184,.10)",
+                background: "rgba(241,250,248,.96)",
               }}
             >
               <input
                 type="text"
                 value={copilotQuestion}
                 onChange={(event) => setCopilotQuestion(event.target.value)}
-                placeholder="AYÇA'ya soru sorun..."
+                placeholder="AYÇA'ya sorun..."
                 aria-label="AYÇA Asistan sorusu"
                 style={{
                   flex: 1,
                   minWidth: 0,
-                  border: "1px solid #d9dce3",
+                  border: "1px solid rgba(99,102,241,.24)",
                   borderRadius: 13,
-                  padding: "12px 14px",
+                  padding: "11px 13px",
                   outline: "none",
+                  background: "rgba(255,255,255,.92)",
+                  color: "#18324a",
                 }}
               />
               <button
                 type="submit"
                 disabled={!copilotQuestion.trim() || isCopilotThinking}
                 style={{
-                  width: 46,
+                  width: 43,
                   border: 0,
                   borderRadius: 13,
                   background:
-                    "linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%)",
+                    "linear-gradient(135deg, #7c3aed 0%, #2563eb 58%, #06b6d4 100%)",
                   color: "#fff",
-                  fontSize: 18,
+                  fontSize: 16,
                   cursor:
                     !copilotQuestion.trim() || isCopilotThinking
                       ? "not-allowed"
                       : "pointer",
                   opacity:
-                    !copilotQuestion.trim() || isCopilotThinking ? 0.55 : 1,
+                    !copilotQuestion.trim() || isCopilotThinking ? 0.52 : 1,
+                  boxShadow: "0 0 22px rgba(99,102,241,.20)",
                 }}
               >
                 ➤
@@ -4464,6 +5070,165 @@ export default function DashboardPage() {
           </aside>
         </>
       )}
+
+      <style>{`
+        .ayca-header-orb-button {
+          position: relative;
+          width: 74px;
+          height: 74px;
+          border: 0;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+          background: transparent;
+        }
+
+        .ayca-header-orb-core {
+          width: 58px;
+          height: 58px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          color: #ddd6fe;
+          font-size: 25px;
+          font-weight: 950;
+          background:
+            radial-gradient(circle at 32% 25%, rgba(125,211,252,.95), transparent 10%),
+            radial-gradient(circle at 50% 48%, #312e81 0%, #1e3a8a 34%, #090f2a 64%, #020617 75%);
+          border: 1px solid rgba(103,232,249,.72);
+          box-shadow:
+            0 0 13px rgba(34,211,238,.52),
+            0 0 28px rgba(59,130,246,.42),
+            0 0 38px rgba(124,58,237,.28),
+            inset 0 0 18px rgba(196,181,253,.26);
+          animation: aycaHeaderOrbPulse 3.1s ease-in-out infinite;
+        }
+
+        .ayca-orb-online-dot,
+        .ayca-orb-offline-dot {
+          position: absolute;
+          right: 5px;
+          bottom: 9px;
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          border: 2px solid #f8fffd;
+        }
+
+        .ayca-orb-online-dot {
+          background: #10b981;
+          box-shadow: 0 0 10px rgba(16,185,129,.65);
+        }
+
+        .ayca-orb-offline-dot {
+          background: #94a3b8;
+        }
+
+        @keyframes aycaHeaderOrbPulse {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(1.045); filter: brightness(1.10); }
+        }
+
+        .ayca-orb-mini {
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          color: #c4b5fd;
+          font-size: 20px;
+          font-weight: 900;
+          background:
+            radial-gradient(circle at 35% 30%, rgba(96,165,250,.95), transparent 14%),
+            radial-gradient(circle at 50% 50%, #172554 32%, #312e81 56%, #020617 72%);
+          border: 1px solid rgba(129,140,248,.58);
+          box-shadow:
+            0 0 16px rgba(59,130,246,.40),
+            0 0 28px rgba(124,58,237,.26),
+            inset 0 0 14px rgba(56,189,248,.20);
+        }
+
+        .ayca-orb-stage {
+          position: relative;
+          width: 150px;
+          height: 150px;
+          margin: 0 auto;
+          display: grid;
+          place-items: center;
+        }
+
+        .ayca-orb-core {
+          position: relative;
+          z-index: 3;
+          width: 94px;
+          height: 94px;
+          border-radius: 50%;
+          display: grid;
+          place-items: center;
+          color: #d8b4fe;
+          font-size: 38px;
+          font-weight: 950;
+          background:
+            radial-gradient(circle at 32% 26%, rgba(125,211,252,.96), transparent 9%),
+            radial-gradient(circle at 50% 46%, rgba(49,46,129,.92) 0%, rgba(30,58,138,.92) 32%, #090f2a 62%, #020617 74%);
+          border: 1px solid rgba(103,232,249,.74);
+          box-shadow:
+            0 0 14px rgba(34,211,238,.65),
+            0 0 34px rgba(59,130,246,.58),
+            0 0 54px rgba(124,58,237,.42),
+            inset 0 0 22px rgba(196,181,253,.30);
+          animation: aycaOrbPulse 3.2s ease-in-out infinite;
+        }
+
+        .ayca-orb-ring {
+          position: absolute;
+          inset: 22px;
+          border-radius: 50%;
+          border: 1px solid rgba(96,165,250,.52);
+          box-shadow: 0 0 14px rgba(59,130,246,.22);
+        }
+
+        .ayca-orb-ring-one {
+          transform: rotate(18deg) scaleX(1.30) scaleY(.48);
+          animation: aycaOrbOrbitOne 7s linear infinite;
+        }
+
+        .ayca-orb-ring-two {
+          transform: rotate(-28deg) scaleX(1.22) scaleY(.55);
+          border-color: rgba(168,85,247,.52);
+          animation: aycaOrbOrbitTwo 9s linear infinite;
+        }
+
+        @keyframes aycaOrbPulse {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(1.045); filter: brightness(1.12); }
+        }
+
+        @keyframes aycaOrbOrbitOne {
+          from { transform: rotate(18deg) scaleX(1.30) scaleY(.48); }
+          to { transform: rotate(378deg) scaleX(1.30) scaleY(.48); }
+        }
+
+        @keyframes aycaOrbOrbitTwo {
+          from { transform: rotate(-28deg) scaleX(1.22) scaleY(.55); }
+          to { transform: rotate(-388deg) scaleX(1.22) scaleY(.55); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ayca-orb-core,
+          .ayca-orb-ring-one,
+          .ayca-orb-ring-two {
+            animation: none !important;
+          }
+        }
+
+        @media (max-width: 1050px) {
+          [aria-label="Dashboard mini analiz grafikleri"] {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </main>
   );
 }
