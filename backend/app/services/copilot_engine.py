@@ -1,5 +1,6 @@
 import json
 import re
+import unicodedata
 from typing import Any
 
 
@@ -93,7 +94,7 @@ INTENT_GUIDANCE = {
         "ve işlem sayısını birlikte değerlendir."
     ),
     "patient": (
-        "Hasta sorularında aktif hasta, VIP hasta, kayıp riski ve "
+        "Hasta sorularında toplam hasta, VIP hasta, kayıp riski ve "
         "context içindeki hasta listelerini kullan."
     ),
     "doctor": (
@@ -440,9 +441,27 @@ def build_copilot_context(
                 )
             ]
 
+        patient_lookup_rows = _safe_list(
+            patient.get("patient_lookup")
+        ) or _safe_list(
+            patient.get("all_patients")
+        ) or patient_rows
+
         context["patient"] = {
+            "total_patient_count": patient.get(
+                "total_patient_count",
+                patient.get(
+                    "active_patient_count",
+                    len(patient_lookup_rows),
+                ),
+            ),
+            # Geriye uyumluluk için eski alanı context'te tutuyoruz.
             "active_patient_count": patient.get(
-                "active_patient_count"
+                "active_patient_count",
+                patient.get(
+                    "total_patient_count",
+                    len(patient_lookup_rows),
+                ),
             ),
             "vip_patient_count": patient.get(
                 "vip_patient_count",
@@ -456,6 +475,7 @@ def build_copilot_context(
                 ),
             ),
             "patients": patient_rows[:100],
+            "patient_lookup": patient_lookup_rows,
             "vip_patients": vip_patients[:100],
             "churn_risk_patients": churn_risk_patients[:100],
         }
@@ -1127,6 +1147,235 @@ def _sort_patients_for_value(patients: list[dict]) -> list[dict]:
     )
 
 
+
+def _normalize_lookup_text(value: Any) -> str:
+    """
+    Hasta adı ve kullanıcı sorusunu karşılaştırmak için Türkçe karakter,
+    noktalama ve boşluk farklarını normalize eder.
+    """
+    raw = str(value or "").strip().casefold()
+    raw = unicodedata.normalize("NFKD", raw)
+    raw = "".join(
+        char
+        for char in raw
+        if not unicodedata.combining(char)
+    )
+    raw = raw.translate(
+        str.maketrans(
+            {
+                "ı": "i",
+                "ş": "s",
+                "ğ": "g",
+                "ü": "u",
+                "ö": "o",
+                "ç": "c",
+            }
+        )
+    )
+    raw = re.sub(r"[^a-z0-9]+", " ", raw)
+    return " ".join(raw.split())
+
+
+def _find_patient_matches(
+    question: str | None,
+    patients: list[dict],
+) -> list[dict]:
+    """
+    Soru içinde geçen tam hasta adını arar.
+
+    Öncelik:
+    1) Tam adın sorunun içinde geçmesi
+    2) Sorunun doğrudan hasta adına eşit olması
+    3) En az iki kelimelik ad-soyad tokenlarının tamamının soruda bulunması
+
+    Tek kelimelik kısmi eşleşme özellikle yapılmaz; yanlış hasta
+    döndürme riskini azaltır.
+    """
+    q = _normalize_lookup_text(question)
+
+    if not q:
+        return []
+
+    matches: list[tuple[int, int, dict]] = []
+
+    for patient in patients:
+        full_name = str(
+            patient.get("patient_name_full")
+            or patient.get("patient_name")
+            or patient.get("customer_name")
+            or patient.get("name")
+            or ""
+        ).strip()
+
+        name_key = _normalize_lookup_text(full_name)
+
+        if not name_key:
+            continue
+
+        name_tokens = [
+            token
+            for token in name_key.split()
+            if len(token) >= 2
+        ]
+
+        score = 0
+
+        if q == name_key:
+            score = 100
+        elif name_key in q:
+            score = 90
+        elif len(name_tokens) >= 2 and all(
+            re.search(
+                rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])",
+                q,
+            )
+            for token in name_tokens
+        ):
+            score = 70 + min(len(name_tokens), 5)
+
+        if score > 0:
+            matches.append(
+                (
+                    score,
+                    len(name_key),
+                    patient,
+                )
+            )
+
+    matches.sort(
+        key=lambda item: (
+            item[0],
+            item[1],
+            _numeric_value(
+                item[2],
+                ["visit_count", "transaction_count"],
+            ),
+        ),
+        reverse=True,
+    )
+
+    return [
+        item[2]
+        for item in matches
+    ]
+
+
+def _patient_lookup_answer(
+    question: str,
+    context: dict,
+) -> tuple[str, list[dict], str | None, bool]:
+    """
+    Hasta adı soruda geçiyorsa doğrulanmış hasta özetini döndürür.
+
+    Returns:
+        answer, items, action, handled
+    """
+    patient_context = _safe_dict(
+        context.get("patient")
+    )
+
+    patients = _safe_list(
+        patient_context.get("patient_lookup")
+    ) or _safe_list(
+        patient_context.get("patients")
+    )
+
+    matches = _find_patient_matches(
+        question,
+        patients,
+    )
+
+    if not matches:
+        return "", [], None, False
+
+    # Aynı normalize isimle birden fazla kayıt varsa yanlış kişiyi
+    # seçmek yerine kullanıcıya birden fazla eşleşme olduğunu bildir.
+    first_key = _normalize_lookup_text(
+        matches[0].get("patient_name_full")
+        or matches[0].get("patient_name")
+    )
+
+    same_name_matches = [
+        row
+        for row in matches
+        if _normalize_lookup_text(
+            row.get("patient_name_full")
+            or row.get("patient_name")
+        )
+        == first_key
+    ]
+
+    if len(same_name_matches) > 1:
+        display_name = (
+            matches[0].get("patient_name_full")
+            or matches[0].get("patient_name")
+            or "Bu isim"
+        )
+        return (
+            f"{display_name} adına birden fazla hasta kaydı eşleşiyor. "
+            "Yanlış kişiyi göstermemek için daha ayırt edici bilgiyle arama yap.",
+            same_name_matches[:10],
+            None,
+            True,
+        )
+
+    patient = matches[0]
+
+    full_name = str(
+        patient.get("patient_name_full")
+        or patient.get("patient_name")
+        or "Hasta"
+    )
+
+    visit_count = _numeric_value(
+        patient,
+        ["visit_count", "transaction_count"],
+    )
+    turnover = _numeric_value(
+        patient,
+        [
+            "turnover",
+            "total_turnover",
+            "total_spend",
+            "revenue",
+        ],
+    )
+    last_visit = str(
+        patient.get("last_visit")
+        or "-"
+    )
+    segment = str(
+        patient.get("segment")
+        or "Belirlenemedi"
+    )
+    risk_level = str(
+        patient.get("risk_level")
+        or "Belirlenemedi"
+    )
+
+    answer = (
+        f"{full_name} için doğrulanmış hasta özeti: "
+        f"{int(round(visit_count))} ziyaret, "
+        f"{_format_number(turnover, 2)} TL ciro, "
+        f"son ziyaret {last_visit}, "
+        f"segment {segment}, "
+        f"kayıp riski {risk_level}."
+    )
+
+    action = None
+    if risk_level.casefold() in {
+        "yüksek",
+        "kritik",
+        "high",
+        "critical",
+    }:
+        action = (
+            "Bu hastanın son ziyaret tarihini ve geçmiş alışveriş "
+            "örüntüsünü takip et."
+        )
+
+    return answer, [patient], action, True
+
 def _product_list_answer(
     *,
     question: str,
@@ -1207,7 +1456,30 @@ def create_deterministic_answer(
     items: list[dict] = []
     action = None
 
-    if sub_intent == "list_vip_patients":
+    patient_lookup_answer = ""
+    patient_lookup_items: list[dict] = []
+    patient_lookup_action = None
+    patient_lookup_handled = False
+
+    if intent in {"patient", "general"}:
+        (
+            patient_lookup_answer,
+            patient_lookup_items,
+            patient_lookup_action,
+            patient_lookup_handled,
+        ) = _patient_lookup_answer(
+            question=question,
+            context=context,
+        )
+
+    if patient_lookup_handled:
+        intent = "patient"
+        sub_intent = "patient_lookup"
+        answer = patient_lookup_answer
+        items = patient_lookup_items
+        action = patient_lookup_action
+
+    elif sub_intent == "list_vip_patients":
         patient = _safe_dict(
             context.get("patient")
         )
@@ -1322,8 +1594,13 @@ def create_deterministic_answer(
         patient = _safe_dict(
             context.get("patient")
         )
+        total_patient_count = patient.get(
+            "total_patient_count",
+            patient.get("active_patient_count", 0),
+        )
+
         answer = (
-            f"{patient.get('active_patient_count', 0)} aktif hasta, "
+            f"{total_patient_count} toplam hasta, "
             f"{patient.get('vip_patient_count', 0)} VIP hasta ve "
             f"{patient.get('churn_risk_count', 0)} kayıp riski taşıyan "
             "hasta bulunuyor."

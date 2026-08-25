@@ -297,12 +297,14 @@ type AnalyzeResult = {
   patient_metrics?: {
     success?: boolean;
     health_score?: number;
+    total_patient_count?: number;
     active_patient_count?: number;
     vip_patient_count?: number;
     lost_patient_risk_count?: number;
     lapsed_patient_count?: number;
     doctors?: DoctorMetric[];
     patients?: PatientMetric[];
+    patient_lookup?: PatientMetric[];
     lapsed_patients?: PatientMetric[];
     institutions?: InstitutionMetric[];
     prescriptions?: PrescriptionMetric[];
@@ -910,8 +912,10 @@ export default function DashboardPage() {
     ),
   );
 
-  const activePatientCount =
-    patientMetrics?.active_patient_count ?? patientList.length;
+  const totalPatientCount =
+    patientMetrics?.total_patient_count ??
+    patientMetrics?.active_patient_count ??
+    patientList.length;
   const vipPatientCount =
     patientMetrics?.vip_patient_count ??
     patientList.filter((item) => item.segment?.toLowerCase().includes("vip"))
@@ -2785,9 +2789,9 @@ export default function DashboardPage() {
 
             <section className="insight-kpi-grid patient-kpi-grid">
               <div className="insight-kpi patient-kpi patient-kpi-purple">
-                <span>👥 Aktif Hasta</span>
-                <strong>{activePatientCount || "-"}</strong>
-                <p>Analiz döneminde işlem yapan hasta</p>
+                <span>👥 Toplam Hasta</span>
+                <strong>{totalPatientCount || "-"}</strong>
+                <p>Analiz dönemindeki benzersiz hasta</p>
               </div>
               <div className="insight-kpi patient-kpi patient-kpi-green">
                 <span>⭐ VIP Hasta</span>
@@ -3546,8 +3550,8 @@ export default function DashboardPage() {
                     <h2>Hasta Yönetimi Özeti</h2>
                     <div className="copilot-advisor-metrics">
                       <div>
-                        <b>{activePatientCount}</b>
-                        <small>Aktif hasta</small>
+                        <b>{totalPatientCount}</b>
+                        <small>Toplam hasta</small>
                       </div>
                       <div>
                         <b>{vipPatientCount}</b>

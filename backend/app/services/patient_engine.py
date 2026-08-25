@@ -414,7 +414,13 @@ def calculate_patient_metrics(
         prescription_no_column=prescription_no_column,
     )
 
-    active_patient_count = len(all_patients)
+    total_patient_count = len(all_patients)
+
+    # Geriye uyumluluk:
+    # Eski frontend/Copilot sürümleri active_patient_count alanını
+    # kullanmaya devam edebilir. Yeni ürün dili "Toplam Hasta"dır.
+    active_patient_count = total_patient_count
+
     vip_patient_count = sum(
         1
         for patient in all_patients
@@ -491,6 +497,7 @@ def calculate_patient_metrics(
     return {
         "success": True,
         "health_score": health_score,
+        "total_patient_count": total_patient_count,
         "active_patient_count": active_patient_count,
         "vip_patient_count": vip_patient_count,
         "lost_patient_risk_count": lost_patient_risk_count,
@@ -501,6 +508,9 @@ def calculate_patient_metrics(
         ),
         "doctors": doctors,
         "patients": patients,
+        # AYÇA Asistan isim-soyisim sorgularında ilk 100 kayıtla
+        # sınırlı kalmaması için tüm hasta özeti.
+        "patient_lookup": all_patients,
         "lapsed_patients": lapsed_patients,
         "institutions": institutions,
         "prescriptions": prescriptions,
@@ -625,7 +635,11 @@ def build_patient_metrics(
                 int((reference_date - last_visit_value).days),
             )
 
-        if visit_count >= 8 or turnover >= 10000:
+        # VIP:
+        # Hem düzenli gelen hem de ekonomik değeri yüksek hastalar.
+        # Tek başına yüksek ciro veya tek başına ziyaret sıklığı
+        # VIP statüsü oluşturmaz.
+        if visit_count >= 8 and turnover >= 15000:
             segment = "VIP"
         elif visit_count >= 4:
             segment = "Sadık"
@@ -1391,12 +1405,14 @@ def empty_patient_metrics(
     return {
         "success": False,
         "health_score": 0,
+        "total_patient_count": 0,
         "active_patient_count": 0,
         "vip_patient_count": 0,
         "lost_patient_risk_count": 0,
         "lapsed_patient_count": 0,
         "doctors": [],
         "patients": [],
+        "patient_lookup": [],
         "lapsed_patients": [],
         "institutions": [],
         "prescriptions": [],
