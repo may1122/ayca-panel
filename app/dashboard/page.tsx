@@ -371,6 +371,7 @@ export default function DashboardPage() {
   ]);
   const [isCopilotThinking, setIsCopilotThinking] = useState(false);
   const [isAssistantDrawerOpen, setIsAssistantDrawerOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const hasConversationStarted = copilotMessages.some(
     (message) => message.role === "user",
@@ -1447,7 +1448,7 @@ export default function DashboardPage() {
           tip={analysisTips[analysisTipIndex]}
         />
       )}
-      <aside className="insight-sidebar">
+      <aside className={`insight-sidebar ${isMobileMenuOpen ? "mobile-open" : ""}`}>
         <div
           style={{
             padding: "10px 10px 12px",
@@ -1496,7 +1497,7 @@ export default function DashboardPage() {
             <button
               key={item}
               className={activeModule === item ? "active" : ""}
-              onClick={() => setActiveModule(item)}
+              onClick={() => { setActiveModule(item); setIsMobileMenuOpen(false); }}
             >
               {item}
             </button>
@@ -1623,6 +1624,15 @@ export default function DashboardPage() {
         </div>
       </aside>
 
+      {isMobileMenuOpen && (
+        <button
+          type="button"
+          className="mobile-sidebar-backdrop"
+          aria-label="Mobil menüyü kapat"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       <section className="insight-content">
         <header
           className="insight-header"
@@ -1641,6 +1651,18 @@ export default function DashboardPage() {
             position: "relative",
           }}
         >
+          <button
+            type="button"
+            className="mobile-menu-button"
+            aria-label="Menüyü aç"
+            aria-expanded={isMobileMenuOpen}
+            onClick={() => setIsMobileMenuOpen(true)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
+
           <div
             aria-hidden="true"
             style={{
@@ -1926,7 +1948,7 @@ export default function DashboardPage() {
             </section>
 
             <section
-              className="insight-kpi-grid dashboard-finance-kpis"
+              className="insight-kpi-grid dashboard-finance-kpis responsive-grid-3"
               style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
             >
               <button
@@ -1984,6 +2006,7 @@ export default function DashboardPage() {
 
             <section
               aria-label="Dashboard mini analiz grafikleri"
+              className="dashboard-mini-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
@@ -3475,6 +3498,7 @@ export default function DashboardPage() {
                   </div>
 
                   <div
+                    className="patient-segment-grid"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
@@ -3585,6 +3609,7 @@ export default function DashboardPage() {
                       </div>
 
                       <div
+                        className="patient-action-grid"
                         style={{
                           display: "grid",
                           gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -5254,6 +5279,272 @@ export default function DashboardPage() {
         @keyframes aycaAlertRing {
           0%, 100% { opacity: .42; transform: scale(.96); }
           50% { opacity: 1; transform: scale(1.04); }
+        }
+
+
+        .mobile-menu-button,
+        .mobile-sidebar-backdrop {
+          display: none;
+        }
+
+        @media (max-width: 1180px) {
+          .insight-kpi-grid,
+          .copilot-kpi-grid,
+          .risk-summary-grid,
+          .patient-kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .dashboard-command-grid,
+          .dashboard-lower-grid,
+          .copilot-overview-grid,
+          .copilot-advisor-grid,
+          .risk-insight-grid,
+          .finance-alert-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 900px) {
+          .insight-page {
+            display: block !important;
+            min-width: 0 !important;
+            width: 100% !important;
+            overflow-x: hidden !important;
+          }
+
+          .insight-sidebar {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            bottom: 0 !important;
+            width: min(292px, 86vw) !important;
+            height: 100dvh !important;
+            z-index: 2100 !important;
+            transform: translateX(-105%) !important;
+            transition: transform 220ms ease !important;
+            box-shadow: 24px 0 54px rgba(15, 23, 42, .22) !important;
+            overflow-y: auto !important;
+          }
+
+          .insight-sidebar.mobile-open {
+            transform: translateX(0) !important;
+          }
+
+          .mobile-sidebar-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 2090;
+            border: 0;
+            padding: 0;
+            background: rgba(15, 23, 42, .32);
+            backdrop-filter: blur(2px);
+          }
+
+          .insight-content {
+            width: 100% !important;
+            min-width: 0 !important;
+            margin-left: 0 !important;
+            padding: 12px !important;
+          }
+
+          .insight-header {
+            min-width: 0 !important;
+            padding: 16px !important;
+            border-radius: 18px !important;
+            gap: 12px !important;
+            flex-wrap: wrap !important;
+            align-items: flex-start !important;
+          }
+
+          .mobile-menu-button {
+            display: grid;
+            place-content: center;
+            gap: 4px;
+            width: 42px;
+            height: 42px;
+            flex: 0 0 42px;
+            border: 1px solid #dbe7ef;
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 5px 14px rgba(15,23,42,.05);
+            cursor: pointer;
+            position: relative;
+            z-index: 3;
+          }
+
+          .mobile-menu-button span {
+            display: block;
+            width: 18px;
+            height: 2px;
+            border-radius: 999px;
+            background: #172554;
+          }
+
+          .insight-header h1 {
+            font-size: clamp(24px, 7vw, 34px) !important;
+            line-height: 1.08 !important;
+          }
+
+          .insight-header > div:last-child {
+            width: 100% !important;
+            justify-content: space-between !important;
+            gap: 10px !important;
+          }
+
+          .ayca-header-orb-button {
+            width: 72px !important;
+            height: 72px !important;
+          }
+
+          .ayca-header-orb-core {
+            width: 56px !important;
+            height: 56px !important;
+            font-size: 16px !important;
+          }
+
+          .ayca-header-orb-button::after {
+            width: 64px !important;
+            height: 26px !important;
+          }
+
+          .insight-main-grid,
+          .dashboard-command-grid,
+          .dashboard-lower-grid,
+          .copilot-chat-layout,
+          .copilot-overview-grid,
+          .copilot-advisor-grid,
+          .copilot-signal-columns,
+          .risk-insight-grid,
+          .risk-action-grid,
+          .risk-donut-layout,
+          .finance-alert-grid,
+          .prescription-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .dashboard-mini-grid,
+          [aria-label="Dashboard mini analiz grafikleri"] {
+            grid-template-columns: 1fr !important;
+          }
+
+          .patient-segment-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .patient-action-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .table-wrapper {
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+          }
+
+          .table-wrapper table {
+            min-width: 720px;
+          }
+
+          .operation-tabs,
+          .patient-tabs,
+          .copilot-tabs,
+          .copilot-quick-questions,
+          .copilot-action-row,
+          .hero-badges,
+          .patient-name-controls {
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+            scrollbar-width: thin;
+            padding-bottom: 3px;
+          }
+
+          .operation-tabs button,
+          .patient-tabs button,
+          .copilot-tabs button,
+          .copilot-quick-questions button {
+            flex: 0 0 auto !important;
+            min-height: 44px;
+          }
+
+          .insight-card {
+            min-width: 0 !important;
+            max-width: 100% !important;
+          }
+
+          input,
+          select,
+          textarea,
+          button {
+            max-width: 100%;
+          }
+
+          input,
+          select,
+          textarea {
+            font-size: 16px !important;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .insight-content {
+            padding: 8px !important;
+          }
+
+          .insight-header {
+            padding: 14px !important;
+            border-radius: 16px !important;
+          }
+
+          .insight-kpi-grid,
+          .copilot-kpi-grid,
+          .risk-summary-grid,
+          .patient-kpi-grid,
+          .responsive-grid-3 {
+            grid-template-columns: 1fr !important;
+          }
+
+          .patient-segment-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 8px !important;
+          }
+
+          .insight-kpi,
+          .insight-card {
+            border-radius: 16px !important;
+          }
+
+          .section-heading,
+          .patient-section-heading,
+          .risk-section-heading,
+          .active-module-title {
+            gap: 8px !important;
+            flex-wrap: wrap !important;
+          }
+
+          .copilot-input-row {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+          }
+
+          .copilot-input-row button,
+          .analysis-btn,
+          .report-download-btn {
+            width: 100% !important;
+            min-height: 46px !important;
+          }
+
+          aside[aria-label="AYÇA Orb Asistan"] {
+            top: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            width: 100vw !important;
+            max-width: 100vw !important;
+            height: 100dvh !important;
+            border-radius: 0 !important;
+          }
         }
 
         @media (prefers-reduced-motion: reduce) {
