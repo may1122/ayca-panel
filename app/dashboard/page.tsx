@@ -1450,84 +1450,46 @@ export default function DashboardPage() {
       <aside className="insight-sidebar">
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "4px 8px 14px",
+            padding: "10px 10px 12px",
           }}
         >
-          <span
-            aria-hidden="true"
+          <div
             style={{
-              width: 42,
-              height: 42,
-              borderRadius: 14,
-              display: "grid",
-              placeItems: "center",
-              flex: "0 0 auto",
-              background: "rgba(255,255,255,0.10)",
-              border: "1px solid rgba(255,255,255,0.14)",
+              width: "100%",
+              borderRadius: 16,
+              padding: "8px 10px",
+              background: "#ffffff",
+              border: "1px solid rgba(103,232,249,.26)",
+              boxShadow: "0 10px 24px rgba(0,0,0,.10)",
+              overflow: "hidden",
             }}
           >
-            <svg
-              width="31"
-              height="31"
-              viewBox="0 0 64 64"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                <linearGradient id="ayca-sidebar-gradient" x1="8" y1="10" x2="56" y2="54">
-                  <stop stopColor="#7C3AED" />
-                  <stop offset="0.55" stopColor="#3B82F6" />
-                  <stop offset="1" stopColor="#2DD4BF" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M12 47L27 15L40 47M18.5 34H34"
-                stroke="url(#ayca-sidebar-gradient)"
-                strokeWidth="6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M34 42L44 25L52 42"
-                stroke="url(#ayca-sidebar-gradient)"
-                strokeWidth="5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <circle cx="51" cy="15" r="3.5" fill="#A855F7" />
-            </svg>
-          </span>
-
-          <div style={{ minWidth: 0 }}>
-            <div
+            <img
+              src="/ayca-logo.png"
+              alt="AYÇA - Akıllı Yazılım Çözüm Asistanı"
               style={{
-                fontSize: 18,
-                lineHeight: 1,
-                fontWeight: 950,
-                letterSpacing: "-0.03em",
-                color: "#fff",
+                display: "block",
+                width: "100%",
+                height: 68,
+                objectFit: "contain",
+                objectPosition: "center",
               }}
-            >
-              AYÇA
-            </div>
-            <div
-              style={{
-                marginTop: 5,
-                fontSize: 10,
-                lineHeight: 1,
-                fontWeight: 900,
-                letterSpacing: ".24em",
-                color: "#67e8f9",
-              }}
-            >
-              INSIGHT
-            </div>
+            />
           </div>
+
+          <p
+            className="sidebar-subtitle"
+            style={{
+              margin: "10px 0 0",
+              textAlign: "center",
+              color: "#b7f7df",
+              fontSize: 11,
+              fontWeight: 850,
+            }}
+          >
+            Eczane Yönetim Zekâsı
+          </p>
         </div>
-        <p className="sidebar-subtitle">Eczane Yönetim Zekâsı</p>
 
         <nav>
           {modules.map((item) => (
@@ -1819,16 +1781,14 @@ export default function DashboardPage() {
               onClick={() => setIsAssistantDrawerOpen(true)}
               aria-label="AYÇA Orb Asistanı aç"
               title="AYÇA Asistan"
-              className="ayca-header-orb-button"
+              className={`ayca-header-orb-button ${isCopilotThinking ? "is-thinking" : totalRiskItems > 0 ? "has-alert" : "is-ready"}`}
             >
-              <span className="ayca-header-orb-core">⌁</span>
+              <span className="ayca-header-orb-core">AY</span>
               <span
                 aria-hidden="true"
                 className={hasAnalysis ? "ayca-orb-online-dot" : "ayca-orb-offline-dot"}
               />
             </button>
-
-            <span className="avatar">A</span>
           </div>
         </header>
 
@@ -4749,7 +4709,7 @@ export default function DashboardPage() {
             >
               <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
                 <div className="ayca-orb-mini">
-                  <span>⌁</span>
+                  <span>AY</span>
                 </div>
                 <div>
                   <strong style={{ display: "block", fontSize: 15, color: "#12314a" }}>
@@ -4858,11 +4818,11 @@ export default function DashboardPage() {
                 textAlign: "center",
               }}
             >
-              <div className="ayca-orb-stage" aria-hidden="true">
+              <div className={`ayca-orb-stage ${isCopilotThinking ? "is-thinking" : totalRiskItems > 0 ? "has-alert" : "is-ready"}`} aria-hidden="true">
                 <div className="ayca-orb-ring ayca-orb-ring-one" />
                 <div className="ayca-orb-ring ayca-orb-ring-two" />
                 <div className="ayca-orb-core">
-                  <span>⌁</span>
+                  <span>AY</span>
                 </div>
               </div>
 
@@ -5074,44 +5034,84 @@ export default function DashboardPage() {
       <style>{`
         .ayca-header-orb-button {
           position: relative;
-          width: 74px;
-          height: 74px;
+          width: 104px;
+          height: 104px;
           border: 0;
           border-radius: 50%;
           display: grid;
           place-items: center;
           cursor: pointer;
           background: transparent;
+          isolation: isolate;
+        }
+
+        .ayca-header-orb-button::after {
+          content: "";
+          position: absolute;
+          width: 88px;
+          height: 34px;
+          border-radius: 50%;
+          border: 1px solid rgba(96,165,250,.42);
+          transform: rotate(-18deg);
+          box-shadow: 0 0 15px rgba(59,130,246,.16);
+          z-index: 1;
+          pointer-events: none;
         }
 
         .ayca-header-orb-core {
-          width: 58px;
-          height: 58px;
+          position: relative;
+          z-index: 3;
+          width: 78px;
+          height: 78px;
           border-radius: 50%;
           display: grid;
           place-items: center;
-          color: #ddd6fe;
-          font-size: 25px;
+          color: #ffffff;
+          font-size: 22px;
+          line-height: 1;
+          letter-spacing: -.11em;
+          padding-right: 3px;
           font-weight: 950;
           background:
-            radial-gradient(circle at 32% 25%, rgba(125,211,252,.95), transparent 10%),
-            radial-gradient(circle at 50% 48%, #312e81 0%, #1e3a8a 34%, #090f2a 64%, #020617 75%);
-          border: 1px solid rgba(103,232,249,.72);
+            radial-gradient(circle at 31% 23%, rgba(255,255,255,.94), transparent 9%),
+            linear-gradient(135deg, #7c3aed 0%, #4f46e5 27%, #3b82f6 60%, #14b8a6 100%);
+          border: 2px solid rgba(153,246,228,.88);
           box-shadow:
-            0 0 13px rgba(34,211,238,.52),
-            0 0 28px rgba(59,130,246,.42),
-            0 0 38px rgba(124,58,237,.28),
-            inset 0 0 18px rgba(196,181,253,.26);
+            0 0 0 7px rgba(59,130,246,.055),
+            0 0 18px rgba(20,184,166,.46),
+            0 0 36px rgba(59,130,246,.42),
+            0 0 52px rgba(124,58,237,.28),
+            inset 0 0 24px rgba(255,255,255,.22);
           animation: aycaHeaderOrbPulse 3.1s ease-in-out infinite;
+        }
+
+        .ayca-header-orb-core::before {
+          content: "✦";
+          position: absolute;
+          top: 11px;
+          right: 12px;
+          font-size: 9px;
+          color: rgba(255,255,255,.95);
+          text-shadow: 0 0 8px rgba(255,255,255,.75);
+        }
+
+        .ayca-header-orb-core::after {
+          content: "";
+          position: absolute;
+          inset: 8px;
+          border-radius: 50%;
+          border-top: 1px solid rgba(255,255,255,.34);
+          border-left: 1px solid rgba(255,255,255,.12);
+          pointer-events: none;
         }
 
         .ayca-orb-online-dot,
         .ayca-orb-offline-dot {
           position: absolute;
-          right: 5px;
-          bottom: 9px;
-          width: 12px;
-          height: 12px;
+          right: 7px;
+          bottom: 12px;
+          width: 14px;
+          height: 14px;
           border-radius: 50%;
           border: 2px solid #f8fffd;
         }
@@ -5136,12 +5136,13 @@ export default function DashboardPage() {
           border-radius: 50%;
           display: grid;
           place-items: center;
-          color: #c4b5fd;
-          font-size: 20px;
-          font-weight: 900;
+          color: #fff;
+          font-size: 11px;
+          letter-spacing: -.08em;
+          font-weight: 950;
           background:
-            radial-gradient(circle at 35% 30%, rgba(96,165,250,.95), transparent 14%),
-            radial-gradient(circle at 50% 50%, #172554 32%, #312e81 56%, #020617 72%);
+            radial-gradient(circle at 30% 22%, rgba(255,255,255,.88), transparent 10%),
+            linear-gradient(135deg, #7c3aed 0%, #3b82f6 52%, #14b8a6 100%);
           border: 1px solid rgba(129,140,248,.58);
           box-shadow:
             0 0 16px rgba(59,130,246,.40),
@@ -5166,18 +5167,19 @@ export default function DashboardPage() {
           border-radius: 50%;
           display: grid;
           place-items: center;
-          color: #d8b4fe;
-          font-size: 38px;
+          color: #ffffff;
+          font-size: 25px;
+          letter-spacing: -.09em;
           font-weight: 950;
           background:
-            radial-gradient(circle at 32% 26%, rgba(125,211,252,.96), transparent 9%),
-            radial-gradient(circle at 50% 46%, rgba(49,46,129,.92) 0%, rgba(30,58,138,.92) 32%, #090f2a 62%, #020617 74%);
-          border: 1px solid rgba(103,232,249,.74);
+            radial-gradient(circle at 30% 22%, rgba(255,255,255,.92), transparent 8%),
+            linear-gradient(135deg, #7c3aed 0%, #3b82f6 50%, #14b8a6 100%);
+          border: 1px solid rgba(103,232,249,.82);
           box-shadow:
-            0 0 14px rgba(34,211,238,.65),
-            0 0 34px rgba(59,130,246,.58),
-            0 0 54px rgba(124,58,237,.42),
-            inset 0 0 22px rgba(196,181,253,.30);
+            0 0 14px rgba(20,184,166,.46),
+            0 0 34px rgba(59,130,246,.46),
+            0 0 54px rgba(124,58,237,.30),
+            inset 0 0 22px rgba(255,255,255,.20);
           animation: aycaOrbPulse 3.2s ease-in-out infinite;
         }
 
@@ -5213,6 +5215,45 @@ export default function DashboardPage() {
         @keyframes aycaOrbOrbitTwo {
           from { transform: rotate(-28deg) scaleX(1.22) scaleY(.55); }
           to { transform: rotate(-388deg) scaleX(1.22) scaleY(.55); }
+        }
+
+        .ayca-header-orb-button.is-thinking .ayca-header-orb-core,
+        .ayca-orb-stage.is-thinking .ayca-orb-core {
+          background:
+            radial-gradient(circle at 30% 22%, rgba(255,255,255,.92), transparent 8%),
+            linear-gradient(135deg, #9333ea 0%, #7c3aed 50%, #4f46e5 100%);
+          box-shadow:
+            0 0 18px rgba(168,85,247,.60),
+            0 0 40px rgba(124,58,237,.42),
+            inset 0 0 20px rgba(255,255,255,.20);
+          animation: aycaThinkingPulse 1.05s ease-in-out infinite;
+        }
+
+        .ayca-header-orb-button.has-alert::before,
+        .ayca-orb-stage.has-alert::before {
+          content: "";
+          position: absolute;
+          inset: 3px;
+          border-radius: 50%;
+          border: 2px solid rgba(245,158,11,.68);
+          box-shadow: 0 0 18px rgba(245,158,11,.30);
+          pointer-events: none;
+          animation: aycaAlertRing 2.4s ease-in-out infinite;
+        }
+
+        .ayca-header-orb-button.is-ready .ayca-header-orb-core,
+        .ayca-orb-stage.is-ready .ayca-orb-core {
+          filter: saturate(1.08) brightness(1.04);
+        }
+
+        @keyframes aycaThinkingPulse {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(1.08); filter: brightness(1.18); }
+        }
+
+        @keyframes aycaAlertRing {
+          0%, 100% { opacity: .42; transform: scale(.96); }
+          50% { opacity: 1; transform: scale(1.04); }
         }
 
         @media (prefers-reduced-motion: reduce) {
