@@ -350,6 +350,11 @@ export default function DashboardPage() {
   const [patientLoyaltyTab, setPatientLoyaltyTab] = useState<
     "segments" | "risk" | "lapsed"
   >("segments");
+  const [patientSegmentFilter, setPatientSegmentFilter] = useState<
+    "all" | "VIP" | "Sadık" | "Aktif" | "Yeni"
+  >("all");
+  const [activePatientContextName, setActivePatientContextName] =
+    useState<string | null>(null);
   const [patientSearch, setPatientSearch] = useState("");
   const [selectedPrescriptionType, setSelectedPrescriptionType] =
     useState("Kırmızı Reçete");
@@ -857,6 +862,7 @@ export default function DashboardPage() {
   const patientMetrics = analyzeResult?.patient_metrics ?? null;
   const doctorMetrics = patientMetrics?.doctors ?? [];
   const patientList = patientMetrics?.patients ?? [];
+  const patientLookupList = patientMetrics?.patient_lookup ?? patientList;
   const lapsedPatientList = patientMetrics?.lapsed_patients ?? [];
   const institutionMetrics = patientMetrics?.institutions ?? [];
   const prescriptionMetrics = patientMetrics?.prescriptions ?? [];
@@ -891,6 +897,41 @@ export default function DashboardPage() {
   const filteredLapsedPatientList =
     lapsedPatientList.filter(matchesPatientSearch);
 
+  const patientSegmentCounts = {
+    all: patientList.length,
+    VIP: patientList.filter((patient) => patient.segment === "VIP").length,
+    Sadık: patientList.filter((patient) => patient.segment === "Sadık").length,
+    Aktif: patientList.filter((patient) => patient.segment === "Aktif").length,
+    Yeni: patientList.filter((patient) => patient.segment === "Yeni").length,
+  };
+
+  const filteredSegmentPatientList = filteredPatientList.filter((patient) =>
+    patientSegmentFilter === "all"
+      ? true
+      : patient.segment === patientSegmentFilter,
+  );
+
+  const visibleLoyaltyPatients =
+    patientLoyaltyTab === "segments"
+      ? filteredSegmentPatientList
+      : patientLoyaltyTab === "risk"
+        ? filteredRiskPatientList
+        : filteredLapsedPatientList;
+
+  function resolvePatientNameFromQuestion(question: string) {
+    const normalizedQuestion = normalizeSearchText(question);
+
+    return (
+      patientLookupList.find((patient) => {
+        const fullName = patient.patient_name_full?.trim();
+        if (!fullName) return false;
+
+        const normalizedName = normalizeSearchText(fullName);
+        return normalizedName.length >= 4 && normalizedQuestion.includes(normalizedName);
+      })?.patient_name_full?.trim() ?? null
+    );
+  }
+
   const selectedPrescription =
     prescriptionMetrics.find(
       (item) => item.prescription_type === selectedPrescriptionType,
@@ -915,6 +956,7 @@ export default function DashboardPage() {
   const totalPatientCount =
     patientMetrics?.total_patient_count ??
     patientMetrics?.active_patient_count ??
+    patientLookupList.length ??
     patientList.length;
   const vipPatientCount =
     patientMetrics?.vip_patient_count ??
@@ -1091,6 +1133,19 @@ export default function DashboardPage() {
 
     if (!finalQuestion || isCopilotThinking) return;
 
+    const patientNameInQuestion = resolvePatientNameFromQuestion(finalQuestion);
+    const resolvedPatientContext =
+      patientNameInQuestion ?? activePatientContextName;
+
+    if (patientNameInQuestion) {
+      setActivePatientContextName(patientNameInQuestion);
+    }
+
+    const backendQuestion =
+      !patientNameInQuestion && resolvedPatientContext
+        ? `${resolvedPatientContext}: ${finalQuestion}`
+        : finalQuestion;
+
     const timestamp = Date.now();
 
     if (!analyzeResult) {
@@ -1144,6 +1199,31 @@ export default function DashboardPage() {
         );
       }
 
+      // Copilot'a her soruda binlerce hastanın detaylı lookup verisini
+      // tekrar göndermiyoruz. Aktif hasta varsa yalnızca onun detaylı
+      // kaydı; yoksa ekranda kullanılan hafif hasta listesi gönderilir.
+      const selectedPatientForCopilot = resolvedPatientContext
+        ? patientLookupList.find(
+            (patient) =>
+              normalizeSearchText(patient.patient_name_full) ===
+              normalizeSearchText(resolvedPatientContext),
+          ) ?? null
+        : null;
+
+      const compactPatientMetrics = analyzeResult.patient_metrics
+        ? {
+            ...analyzeResult.patient_metrics,
+            patient_lookup: selectedPatientForCopilot
+              ? [selectedPatientForCopilot]
+              : analyzeResult.patient_metrics.patients ?? [],
+          }
+        : null;
+
+      const copilotAnalysisResult: AnalyzeResult = {
+        ...analyzeResult,
+        patient_metrics: compactPatientMetrics,
+      };
+
       const response = await fetch(COPILOT_URL, {
         method: "POST",
         headers: {
@@ -1154,9 +1234,9 @@ export default function DashboardPage() {
           company_id: companyId,
           question:
             activeModule === "🤖 AYÇA Asistan"
-              ? finalQuestion
-              : `[Aktif ekran: ${activeModule}] ${finalQuestion}`,
-          analysis_result: analyzeResult,
+              ? backendQuestion
+              : `[Aktif ekran: ${activeModule}] ${backendQuestion}`,
+          analysis_result: copilotAnalysisResult,
         }),
       });
 
@@ -1185,6 +1265,7 @@ export default function DashboardPage() {
               index: number,
             ) => {
               const name =
+                (showPatientNames ? item.patient_name_full : null) ??
                 item.patient_name ??
                 item.doctor_name ??
                 item.product_name ??
@@ -2917,34 +2998,354 @@ export default function DashboardPage() {
                 <section className="insight-card patient-panel">
                   <div className="patient-section-heading">
                     <div>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          background: "#f3f0ff",
+                          color: "#6d28d9",
+                          fontSize: 11,
+                          fontWeight: 900,
+                          marginBottom: 8,
+                        }}
+                      >
+                        HASTA DENEYİMİ V2
+                      </span>
                       <h2>👥 Hasta Sadakati</h2>
-                      <p>Hasta segmenti, ziyaret sıklığı ve geri kazanım riski</p>
+                      <p>
+                        Hastaları segment, ziyaret sıklığı ve geri kazanım riskine
+                        göre hızlıca filtreleyin.
+                      </p>
                     </div>
-                    <div className="patient-name-controls" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <span className={showPatientNames ? "patient-live-badge patient-live-warning" : "patient-live-badge"}>
+
+                    <div
+                      className="patient-name-controls"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      {activePatientContextName && (
+                        <span
+                          style={{
+                            padding: "7px 10px",
+                            borderRadius: 999,
+                            background: "#ecfeff",
+                            color: "#0f766e",
+                            border: "1px solid #a5f3fc",
+                            fontSize: 11,
+                            fontWeight: 900,
+                          }}
+                          title="AYÇA devam sorularında bu hastayı bağlam olarak kullanır."
+                        >
+                          ✧ Aktif hasta:{" "}
+                          {showPatientNames
+                            ? activePatientContextName
+                            : "KVKK korumalı"}
+                        </span>
+                      )}
+
+                      <span
+                        className={
+                          showPatientNames
+                            ? "patient-live-badge patient-live-warning"
+                            : "patient-live-badge"
+                        }
+                      >
                         {showPatientNames ? "İsimler görünür" : "KVKK maskeli"}
                       </span>
-                      <button type="button" className={showPatientNames ? "patient-name-button patient-name-button-active" : "patient-name-button"} onClick={handlePatientNameVisibility}>
-                        {showPatientNames ? "🔒 İsimleri Gizle" : "👁️ Hasta İsimlerini Göster"}
+
+                      <button
+                        type="button"
+                        className={
+                          showPatientNames
+                            ? "patient-name-button patient-name-button-active"
+                            : "patient-name-button"
+                        }
+                        onClick={handlePatientNameVisibility}
+                      >
+                        {showPatientNames
+                          ? "🔒 İsimleri Gizle"
+                          : "👁️ Hasta İsimlerini Göster"}
                       </button>
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                      gap: 10,
+                      marginBottom: 16,
+                    }}
+                  >
                     {[
-                      ["segments", "👥 Hasta Segmentleri"],
-                      ["risk", `⚠️ Kayıp Riski (${lostPatientRiskCount})`],
-                      ["lapsed", `🚪 Gelmeyi Bırakanlar (${lapsedPatientCount})`],
-                    ].map(([key, label]) => (
-                      <button
-                        key={key}
-                        type="button"
-                        className={patientLoyaltyTab === key ? "patient-tab active" : "patient-tab"}
-                        onClick={() => setPatientLoyaltyTab(key as "segments" | "risk" | "lapsed")}
+                      { key: "all", label: "Tümü", icon: "👥", count: patientSegmentCounts.all },
+                      { key: "VIP", label: "VIP", icon: "👑", count: patientSegmentCounts.VIP },
+                      { key: "Sadık", label: "Sadık", icon: "💜", count: patientSegmentCounts.Sadık },
+                      { key: "Aktif", label: "Aktif", icon: "🔵", count: patientSegmentCounts.Aktif },
+                      { key: "Yeni", label: "Yeni", icon: "🌱", count: patientSegmentCounts.Yeni },
+                    ].map((segment) => {
+                      const isActive =
+                        patientLoyaltyTab === "segments" &&
+                        patientSegmentFilter === segment.key;
+
+                      return (
+                        <button
+                          key={segment.key}
+                          type="button"
+                          onClick={() => {
+                            setPatientLoyaltyTab("segments");
+                            setPatientSegmentFilter(
+                              segment.key as "all" | "VIP" | "Sadık" | "Aktif" | "Yeni",
+                            );
+                          }}
+                          style={{
+                            border: isActive ? "1px solid #7c3aed" : "1px solid #e5e7eb",
+                            borderRadius: 16,
+                            padding: "13px 12px",
+                            background: isActive ? "#f5f3ff" : "#fff",
+                            boxShadow: isActive
+                              ? "0 8px 22px rgba(124, 58, 237, 0.12)"
+                              : "0 4px 14px rgba(15, 23, 42, 0.04)",
+                            cursor: "pointer",
+                            textAlign: "left",
+                            transition: "all 160ms ease",
+                          }}
+                        >
+                          <span style={{ display: "block", fontSize: 18, marginBottom: 6 }}>
+                            {segment.icon}
+                          </span>
+                          <strong style={{ display: "block", fontSize: 14, color: "#172554" }}>
+                            {segment.label}
+                          </strong>
+                          <small
+                            style={{
+                              display: "block",
+                              marginTop: 3,
+                              color: "#64748b",
+                              fontWeight: 800,
+                            }}
+                          >
+                            {segment.count} hasta
+                          </small>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 14,
+                    }}
+                  >
+                    <div style={{ width: "100%" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          marginBottom: 10,
+                        }}
                       >
-                        {label}
-                      </button>
-                    ))}
+                        <div>
+                          <span
+                            style={{
+                              display: "block",
+                              fontSize: 11,
+                              fontWeight: 900,
+                              letterSpacing: ".06em",
+                              color: "#64748b",
+                              marginBottom: 2,
+                            }}
+                          >
+                            AKSİYON GEREKTİRENLER
+                          </span>
+                          <small style={{ color: "#94a3b8", fontWeight: 700 }}>
+                            Risk ve geri kazanım listelerini ayrı izleyin.
+                          </small>
+                        </div>
+
+                        <span style={{ fontSize: 12, color: "#64748b", fontWeight: 700 }}>
+                          {patientLoyaltyTab === "segments"
+                            ? `${patientSegmentFilter === "all" ? "Tüm segmentler" : patientSegmentFilter} · ${visibleLoyaltyPatients.length} kayıt`
+                            : patientLoyaltyTab === "risk"
+                              ? `${lostPatientRiskCount} hasta · İlk ${visibleLoyaltyPatients.length} kayıt gösteriliyor`
+                              : `${lapsedPatientCount} hasta · İlk ${visibleLoyaltyPatients.length} kayıt gösteriliyor`}
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                          gap: 12,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setPatientLoyaltyTab("risk")}
+                          style={{
+                            border:
+                              patientLoyaltyTab === "risk"
+                                ? "1px solid #fb923c"
+                                : "1px solid #fed7aa",
+                            borderRadius: 16,
+                            padding: "14px 16px",
+                            background:
+                              patientLoyaltyTab === "risk"
+                                ? "#fff7ed"
+                                : "linear-gradient(135deg, #fffaf5 0%, #ffffff 100%)",
+                            boxShadow:
+                              patientLoyaltyTab === "risk"
+                                ? "0 10px 24px rgba(249, 115, 22, 0.14)"
+                                : "0 4px 14px rgba(15, 23, 42, 0.04)",
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                            }}
+                          >
+                            <div>
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: 12,
+                                  fontWeight: 900,
+                                  color: "#c2410c",
+                                  marginBottom: 4,
+                                }}
+                              >
+                                ⚠️ Kayıp Riski
+                              </span>
+                              <strong
+                                style={{
+                                  display: "block",
+                                  fontSize: 24,
+                                  lineHeight: 1,
+                                  color: "#7c2d12",
+                                }}
+                              >
+                                {lostPatientRiskCount.toLocaleString("tr-TR")}
+                              </strong>
+                              <small
+                                style={{
+                                  display: "block",
+                                  marginTop: 6,
+                                  color: "#9a3412",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Takip edilmesi gereken hastalar
+                              </small>
+                            </div>
+
+                            <span
+                              style={{
+                                fontSize: 20,
+                                color: "#fb923c",
+                                fontWeight: 900,
+                              }}
+                            >
+                              →
+                            </span>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setPatientLoyaltyTab("lapsed")}
+                          style={{
+                            border:
+                              patientLoyaltyTab === "lapsed"
+                                ? "1px solid #8b5cf6"
+                                : "1px solid #ddd6fe",
+                            borderRadius: 16,
+                            padding: "14px 16px",
+                            background:
+                              patientLoyaltyTab === "lapsed"
+                                ? "#f5f3ff"
+                                : "linear-gradient(135deg, #faf8ff 0%, #ffffff 100%)",
+                            boxShadow:
+                              patientLoyaltyTab === "lapsed"
+                                ? "0 10px 24px rgba(124, 58, 237, 0.14)"
+                                : "0 4px 14px rgba(15, 23, 42, 0.04)",
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                            }}
+                          >
+                            <div>
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: 12,
+                                  fontWeight: 900,
+                                  color: "#6d28d9",
+                                  marginBottom: 4,
+                                }}
+                              >
+                                🚪 Gelmeyi Bırakanlar
+                              </span>
+                              <strong
+                                style={{
+                                  display: "block",
+                                  fontSize: 24,
+                                  lineHeight: 1,
+                                  color: "#4c1d95",
+                                }}
+                              >
+                                {lapsedPatientCount.toLocaleString("tr-TR")}
+                              </strong>
+                              <small
+                                style={{
+                                  display: "block",
+                                  marginTop: 6,
+                                  color: "#6d28d9",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Geri kazanım fırsatlarını incele
+                              </small>
+                            </div>
+
+                            <span
+                              style={{
+                                fontSize: 20,
+                                color: "#8b5cf6",
+                                fontWeight: 900,
+                              }}
+                            >
+                              →
+                            </span>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div style={{ marginBottom: 16 }}>
@@ -2952,34 +3353,169 @@ export default function DashboardPage() {
                       type="search"
                       value={patientSearch}
                       onChange={(event) => setPatientSearch(event.target.value)}
-                      placeholder={showPatientNames ? "🔎 Hasta adı, segment veya risk ara..." : "🔎 Maskeli hasta, segment veya risk ara..."}
+                      placeholder={
+                        showPatientNames
+                          ? "🔎 Hasta adı, segment veya risk ara..."
+                          : "🔎 Maskeli hasta, segment veya risk ara..."
+                      }
                       aria-label="Hasta ara"
-                      style={{ width: "100%", maxWidth: 520, padding: "12px 14px", borderRadius: 12, border: "1px solid #d9dce3", background: "#fff" }}
+                      style={{
+                        width: "100%",
+                        maxWidth: 560,
+                        padding: "13px 15px",
+                        borderRadius: 14,
+                        border: "1px solid #d9dce3",
+                        background: "#fff",
+                        boxShadow: "0 3px 12px rgba(15, 23, 42, 0.04)",
+                      }}
                     />
                   </div>
 
                   <div className="table-wrapper">
                     <table>
                       <thead>
-                        <tr><th>Hasta</th><th>Segment</th><th>Ziyaret</th><th>Ciro</th><th>Son Ziyaret</th><th>Risk</th></tr>
+                        <tr>
+                          <th>Hasta</th>
+                          <th>Segment</th>
+                          <th>Ziyaret</th>
+                          <th>Son Ziyaret</th>
+                          <th>Ciro</th>
+                          <th>Risk</th>
+                          <th></th>
+                        </tr>
                       </thead>
                       <tbody>
-                        {(patientLoyaltyTab === "segments" ? filteredPatientList : patientLoyaltyTab === "risk" ? filteredRiskPatientList : filteredLapsedPatientList).length > 0 ? (
-                          (patientLoyaltyTab === "segments" ? filteredPatientList : patientLoyaltyTab === "risk" ? filteredRiskPatientList : filteredLapsedPatientList).map((patient, index) => (
-                            <tr key={`${patientLoyaltyTab}-${patient.patient_name}-${index}`}>
-                              <td>{showPatientNames ? patient.patient_name_full || patient.patient_name : patient.patient_name}</td>
-                              <td><span className="patient-segment">{patient.segment ?? "Standart"}</span></td>
-                              <td>{patient.visit_count ?? "-"}</td>
-                              <td>{patient.turnover != null ? `${patient.turnover.toLocaleString("tr-TR")} ₺` : "-"}</td>
-                              <td>{patient.last_visit ?? "-"}</td>
-                              <td><span className="patient-risk-pill">{patient.risk_level ?? "-"}</span></td>
-                            </tr>
-                          ))
+                        {visibleLoyaltyPatients.length > 0 ? (
+                          visibleLoyaltyPatients.map((patient, index) => {
+                            const patientDisplayName = showPatientNames
+                              ? patient.patient_name_full || patient.patient_name
+                              : patient.patient_name;
+
+                            const patientLookupName =
+                              patient.patient_name_full || patient.patient_name;
+
+                            return (
+                              <tr key={`${patientLoyaltyTab}-${patient.patient_name}-${index}`}>
+                                <td>
+                                  <div style={{ display: "grid", gap: 3 }}>
+                                    <strong>{patientDisplayName}</strong>
+                                    <small style={{ color: "#94a3b8" }}>
+                                      {patient.segment ?? "Standart"} hasta
+                                    </small>
+                                  </div>
+                                </td>
+                                <td>
+                                  <span className="patient-segment">
+                                    {patient.segment ?? "Standart"}
+                                  </span>
+                                </td>
+                                <td>{patient.visit_count ?? "-"}</td>
+                                <td>{patient.last_visit ?? "-"}</td>
+                                <td>
+                                  {patient.turnover != null
+                                    ? `${patient.turnover.toLocaleString("tr-TR")} ₺`
+                                    : "-"}
+                                </td>
+                                <td>
+                                  <span className="patient-risk-pill">
+                                    {patient.risk_level ?? "-"}
+                                  </span>
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!showPatientNames) {
+                                        const approved = window.confirm(
+                                          "KVKK kapsamında hasta bilgileri hassas veridir.\n\nBu hastayı AYÇA Asistan bağlamına almak istediğinize emin misiniz?",
+                                        );
+                                        if (!approved) return;
+                                      }
+
+                                      setActivePatientContextName(patientLookupName);
+                                      setIsAssistantDrawerOpen(true);
+                                      void submitCopilotQuestion(
+                                        `${patientLookupName} hastasını özetle`,
+                                      );
+                                    }}
+                                    style={{
+                                      border: "1px solid #ddd6fe",
+                                      borderRadius: 10,
+                                      padding: "8px 10px",
+                                      background: "#f5f3ff",
+                                      color: "#6d28d9",
+                                      fontSize: 12,
+                                      fontWeight: 900,
+                                      cursor: "pointer",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    ✧ AYÇA'ya Sor
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })
                         ) : (
-                          <tr><td colSpan={6}><div className="patient-empty"><b>Kayıt bulunamadı</b><span>Arama kriterini veya seçili alt sekmeyi değiştirin.</span></div></td></tr>
+                          <tr>
+                            <td colSpan={7}>
+                              <div className="patient-empty">
+                                <b>Kayıt bulunamadı</b>
+                                <span>Arama kriterini, segmenti veya risk görünümünü değiştirin.</span>
+                              </div>
+                            </td>
+                          </tr>
                         )}
                       </tbody>
                     </table>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      marginTop: 16,
+                      paddingTop: 14,
+                      borderTop: "1px solid #eef2f7",
+                    }}
+                  >
+                    {[
+                      "En son ne zaman geldi?",
+                      "Kaç kere gelmiş?",
+                      "Toplam ne kadar alışveriş yapmış?",
+                      "Kayıp riski neden orta?",
+                      "Hangi doktorlardan reçete getirmiş?",
+                      "Son aldığı ilaçlar neler?",
+                      "Bu hastayı geri kazanmak için ne yapmalıyım?",
+                    ].map((question) => (
+                      <button
+                        key={question}
+                        type="button"
+                        disabled={!activePatientContextName}
+                        onClick={() => {
+                          setIsAssistantDrawerOpen(true);
+                          void submitCopilotQuestion(question);
+                        }}
+                        title={
+                          activePatientContextName
+                            ? "Seçili hasta için AYÇA'ya sor"
+                            : "Önce listeden bir hastayı AYÇA bağlamına alın"
+                        }
+                        style={{
+                          padding: "7px 10px",
+                          borderRadius: 999,
+                          background: activePatientContextName ? "#f8fafc" : "#f1f5f9",
+                          border: "1px solid #e2e8f0",
+                          color: activePatientContextName ? "#475569" : "#94a3b8",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: activePatientContextName ? "pointer" : "not-allowed",
+                        }}
+                      >
+                        {question}
+                      </button>
+                    ))}
                   </div>
                 </section>
               )}

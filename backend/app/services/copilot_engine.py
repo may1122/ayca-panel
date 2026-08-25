@@ -64,7 +64,8 @@ COPILOT_INTENTS = {
 
 
 SYSTEM_RULES = [
-    "Yalnızca sağlanan context içindeki doğrulanmış verilere dayan.",
+    "Selamlaşma ve nasılsın gibi temel sohbet mesajlarına kısa ve doğal cevap verebilirsin.",
+    "Operasyonel, finansal, ürün, hasta veya doktor sorularında yalnızca sağlanan context içindeki doğrulanmış verilere dayan.",
     "Context içinde olmayan sayı, isim, ürün, hasta, doktor veya finansal değer üretme.",
     "Eksik veri varsa bunu açıkça belirt.",
     "Yeni matematiksel varsayım üretme; motorların hesapladığı değerleri kullan.",
@@ -131,6 +132,75 @@ def normalize_question(question: str | None) -> str:
         .split()
     )
 
+
+
+SMALL_TALK_RESPONSES = {
+    "nasilsin": "İyiyim, teşekkür ederim. Eczanenizin verileriyle ilgili neye bakalım?",
+    "naber": "İyiyim 🙂 Hazırım. İsterseniz stok, finans, hasta veya sipariş tarafına bakalım.",
+    "selam": "Merhaba 👋 Nasıl yardımcı olabilirim?",
+    "merhaba": "Merhaba 👋 Nasıl yardımcı olabilirim?",
+    "gunaydin": "Günaydın 👋 Bugün eczanenizde neye bakalım?",
+    "iyi aksamlar": "İyi akşamlar 👋 Nasıl yardımcı olabilirim?",
+    "tesekkur": "Rica ederim 🙂",
+    "sag ol": "Rica ederim 🙂",
+}
+
+
+
+def _strip_active_screen_prefix(question: str | None) -> str:
+    """
+    Frontend drawer, aktif ekran bilgisini sorunun başına ekleyebilir:
+    [Aktif ekran: 🏠 Dashboard] Kaç VIP hastam var?
+
+    Bu metadata kullanıcı sorusunun bir parçası değildir ve özellikle
+    çoklu-soru algılamasını yanlış tetiklememelidir.
+    """
+    raw = str(question or "").strip()
+    return re.sub(
+        r"^\s*\[Aktif ekran:[^\]]+\]\s*",
+        "",
+        raw,
+        flags=re.IGNORECASE,
+    ).strip()
+
+def _normalize_small_talk(value: str | None) -> str:
+    raw = str(value or "").strip().casefold()
+    raw = unicodedata.normalize("NFKD", raw)
+    raw = "".join(
+        char
+        for char in raw
+        if not unicodedata.combining(char)
+    )
+    raw = raw.translate(
+        str.maketrans(
+            {
+                "ı": "i",
+                "ş": "s",
+                "ğ": "g",
+                "ü": "u",
+                "ö": "o",
+                "ç": "c",
+            }
+        )
+    )
+    raw = re.sub(r"[^a-z0-9\s]+", " ", raw)
+    return " ".join(raw.split())
+
+
+def _small_talk_answer(question: str | None) -> str | None:
+    q = _normalize_small_talk(_strip_active_screen_prefix(question))
+    if not q:
+        return None
+
+    # Do not treat a long operational question containing "selam" as small talk.
+    if len(q.split()) > 8:
+        return None
+
+    for key, answer in SMALL_TALK_RESPONSES.items():
+        if q == key or q.startswith(f"{key} ") or key in q:
+            return answer
+
+    return None
 
 def detect_intent(question: str | None) -> dict:
     normalized = normalize_question(question)
@@ -443,8 +513,6 @@ def build_copilot_context(
 
         patient_lookup_rows = _safe_list(
             patient.get("patient_lookup")
-        ) or _safe_list(
-            patient.get("all_patients")
         ) or patient_rows
 
         context["patient"] = {
@@ -455,7 +523,7 @@ def build_copilot_context(
                     len(patient_lookup_rows),
                 ),
             ),
-            # Geriye uyumluluk için eski alanı context'te tutuyoruz.
+            # Geriye uyumluluk
             "active_patient_count": patient.get(
                 "active_patient_count",
                 patient.get(
@@ -679,6 +747,10 @@ def detect_sub_intent(
     intent: str,
 ) -> str:
     q = normalize_question(question)
+
+    # Hasta devam sorularında genel product/doctor intent'ine kaymayı engelle.
+    if _looks_like_patient_followup(question):
+        intent = "patient"
 
     if intent == "patient":
         if "vip" in q and any(
@@ -1149,10 +1221,6 @@ def _sort_patients_for_value(patients: list[dict]) -> list[dict]:
 
 
 def _normalize_lookup_text(value: Any) -> str:
-    """
-    Hasta adı ve kullanıcı sorusunu karşılaştırmak için Türkçe karakter,
-    noktalama ve boşluk farklarını normalize eder.
-    """
     raw = str(value or "").strip().casefold()
     raw = unicodedata.normalize("NFKD", raw)
     raw = "".join(
@@ -1180,19 +1248,7 @@ def _find_patient_matches(
     question: str | None,
     patients: list[dict],
 ) -> list[dict]:
-    """
-    Soru içinde geçen tam hasta adını arar.
-
-    Öncelik:
-    1) Tam adın sorunun içinde geçmesi
-    2) Sorunun doğrudan hasta adına eşit olması
-    3) En az iki kelimelik ad-soyad tokenlarının tamamının soruda bulunması
-
-    Tek kelimelik kısmi eşleşme özellikle yapılmaz; yanlış hasta
-    döndürme riskini azaltır.
-    """
     q = _normalize_lookup_text(question)
-
     if not q:
         return []
 
@@ -1208,7 +1264,6 @@ def _find_patient_matches(
         ).strip()
 
         name_key = _normalize_lookup_text(full_name)
-
         if not name_key:
             continue
 
@@ -1233,14 +1288,8 @@ def _find_patient_matches(
         ):
             score = 70 + min(len(name_tokens), 5)
 
-        if score > 0:
-            matches.append(
-                (
-                    score,
-                    len(name_key),
-                    patient,
-                )
-            )
+        if score:
+            matches.append((score, len(name_key), patient))
 
     matches.sort(
         key=lambda item: (
@@ -1254,25 +1303,295 @@ def _find_patient_matches(
         reverse=True,
     )
 
-    return [
-        item[2]
-        for item in matches
-    ]
+    return [item[2] for item in matches]
 
+
+
+PATIENT_FOLLOWUP_PHRASES = [
+    "en son ne zaman",
+    "son ne zaman",
+    "son ziyaret",
+    "kaç kere",
+    "kac kere",
+    "kaç kez",
+    "kac kez",
+    "kaç defa",
+    "kac defa",
+    "toplam ne kadar",
+    "ne kadar alışveriş",
+    "ne kadar alisveris",
+    "cirosu",
+    "harcama",
+    "risk neden",
+    "kayıp riski neden",
+    "kayip riski neden",
+    "hangi doktor",
+    "hangi hekim",
+    "doktorlardan",
+    "hekimlerden",
+    "hangi ilaç",
+    "hangi ilac",
+    "hangi ürün",
+    "hangi urun",
+    "son aldığı",
+    "son aldigi",
+    "geri kazan",
+    "geri get",
+    "yeniden gelsin",
+]
+
+
+def _looks_like_patient_followup(question: str | None) -> bool:
+    q = normalize_question(question)
+    return any(phrase in q for phrase in PATIENT_FOLLOWUP_PHRASES)
+
+
+def _split_multi_question(question: str | None) -> list[str]:
+    """
+    Bir mesaj içindeki birden fazla kısa soruyu güvenli biçimde ayırır.
+    Noktalı virgül, soru işareti ve ardışık hasta-soru kalıplarını destekler.
+    """
+    raw = _strip_active_screen_prefix(question)
+    if not raw:
+        return []
+
+    # Önce klasik ayraçlar.
+    parts = re.split(r"\?+|;+\s*|\n+", raw)
+    parts = [" ".join(part.strip().split()) for part in parts if part.strip()]
+
+    # Tek parça kaldıysa aynı mesaj içinde arka arkaya gelen soru başlangıçlarını böl.
+    if len(parts) == 1:
+        markers = [
+            " en son ",
+            " kaç ",
+            " kac ",
+            " toplam ",
+            " kayıp riski ",
+            " kayip riski ",
+            " hangi doktor",
+            " hangi hekim",
+            " hangi ilaç",
+            " hangi ilac",
+            " hangi ürün",
+            " hangi urun",
+            " geri kazan",
+            " ne yapmalıyım",
+            " ne yapmaliyim",
+        ]
+
+        lowered = f" {normalize_question(raw)} "
+        split_points: list[int] = []
+
+        for marker in markers:
+            start = 0
+            while True:
+                index = lowered.find(marker, start)
+                if index < 0:
+                    break
+                if index > 1:
+                    split_points.append(index - 1)
+                start = index + len(marker)
+
+        split_points = sorted(set(split_points))
+        if split_points:
+            raw_parts = []
+            last = 0
+            for point in split_points:
+                candidate = raw[last:point].strip(" ,.-")
+                if candidate:
+                    raw_parts.append(candidate)
+                last = point
+            candidate = raw[last:].strip(" ,.-")
+            if candidate:
+                raw_parts.append(candidate)
+
+            if len(raw_parts) > 1:
+                parts = raw_parts
+
+    return parts[:6]
+
+
+def _contains_multiple_questions(question: str | None) -> bool:
+    """
+    MVP güvenlik kuralı.
+
+    Çoklu soru algısını bilinçli olarak muhafazakâr tutuyoruz:
+    - 2+ soru işareti
+    - veya noktalı virgül / satır sonuyla ayrılmış 2+ soru cümlesi
+
+    "Sümeyra Yılmaz en son ne zaman geldi?" gibi tek hasta soruları,
+    içlerinde "en son", "kaç", "hangi" geçtiği için yanlışlıkla çoklu
+    soru sayılmaz.
+    """
+    raw = _strip_active_screen_prefix(question)
+    if not raw:
+        return False
+
+    if raw.count("?") >= 2:
+        return True
+
+    if ";" in raw or "\n" in raw:
+        parts = [
+            part.strip()
+            for part in re.split(r";+|\n+", raw)
+            if part.strip()
+        ]
+        question_like_parts = [
+            part
+            for part in parts
+            if (
+                "?" in part
+                or any(
+                    token in normalize_question(part)
+                    for token in [
+                        " ne ",
+                        " nasıl ",
+                        " nasil ",
+                        " kaç ",
+                        " kac ",
+                        " hangi ",
+                        " neden ",
+                        " kim ",
+                    ]
+                )
+            )
+        ]
+        return len(question_like_parts) >= 2
+
+    return False
+
+def _patient_question_kind(question: str | None) -> str:
+    q = normalize_question(question)
+
+    if any(
+        phrase in q
+        for phrase in [
+            "en son ne zaman",
+            "son ne zaman",
+            "son ziyaret",
+            "en son geldi",
+            "ne zaman geldi",
+        ]
+    ):
+        return "last_visit"
+
+    if any(
+        phrase in q
+        for phrase in [
+            "kaç kere",
+            "kac kere",
+            "kaç kez",
+            "kac kez",
+            "kaç defa",
+            "kac defa",
+            "ziyaret say",
+        ]
+    ):
+        return "visit_count"
+
+    if any(
+        phrase in q
+        for phrase in [
+            "ne kadar alışveriş",
+            "ne kadar alisveris",
+            "toplam ne kadar",
+            "toplam ciro",
+            "cirosu",
+            "harcama",
+        ]
+    ):
+        return "turnover"
+
+    if any(
+        phrase in q
+        for phrase in [
+            "neden orta",
+            "neden yüksek",
+            "neden yuksek",
+            "neden kritik",
+            "risk neden",
+            "kayıp riski neden",
+            "kayip riski neden",
+        ]
+    ):
+        return "risk_reason"
+
+    if any(
+        phrase in q
+        for phrase in [
+            "hangi doktor",
+            "hangi hekim",
+            "doktorlardan",
+            "hekimlerden",
+        ]
+    ):
+        return "doctor_history"
+
+    if any(
+        phrase in q
+        for phrase in [
+            "son aldığı ilaç",
+            "son aldigi ilac",
+            "son aldığı ürün",
+            "son aldigi urun",
+            "hangi ilaçları",
+            "hangi ilaclari",
+            "hangi ürünleri",
+            "hangi urunleri",
+        ]
+    ):
+        return "recent_products"
+
+    if any(
+        phrase in q
+        for phrase in [
+            "geri kazan",
+            "geri get",
+            "yeniden gelsin",
+            "ne yapmalıyım",
+            "ne yapmaliyim",
+        ]
+    ):
+        return "recovery_action"
+
+    return "unknown"
+
+
+
+def _patient_display_name(patient: dict) -> str:
+    return str(
+        patient.get("patient_name_full")
+        or patient.get("patient_name")
+        or "Hasta"
+    ).strip()
+
+
+def _patient_compact_fact_line(patient: dict) -> str:
+    name = _patient_display_name(patient)
+    visit_count = int(round(_numeric_value(
+        patient,
+        ["visit_count", "transaction_count"],
+    )))
+    turnover = _numeric_value(
+        patient,
+        ["turnover", "total_turnover", "total_spend", "revenue"],
+    )
+    last_visit = str(patient.get("last_visit") or "-")
+    segment = str(patient.get("segment") or "Belirlenemedi")
+    risk_level = str(patient.get("risk_level") or "Belirlenemedi")
+
+    return (
+        f"{name}: {visit_count} ziyaret, "
+        f"{_format_number(turnover, 2)} TL ciro, "
+        f"son ziyaret {last_visit}, "
+        f"{segment} segmenti, {risk_level} risk."
+    )
 
 def _patient_lookup_answer(
     question: str,
     context: dict,
 ) -> tuple[str, list[dict], str | None, bool]:
-    """
-    Hasta adı soruda geçiyorsa doğrulanmış hasta özetini döndürür.
-
-    Returns:
-        answer, items, action, handled
-    """
-    patient_context = _safe_dict(
-        context.get("patient")
-    )
+    patient_context = _safe_dict(context.get("patient"))
 
     patients = _safe_list(
         patient_context.get("patient_lookup")
@@ -1280,57 +1599,105 @@ def _patient_lookup_answer(
         patient_context.get("patients")
     )
 
-    matches = _find_patient_matches(
-        question,
-        patients,
-    )
-
+    matches = _find_patient_matches(question, patients)
     if not matches:
         return "", [], None, False
 
-    # Aynı normalize isimle birden fazla kayıt varsa yanlış kişiyi
-    # seçmek yerine kullanıcıya birden fazla eşleşme olduğunu bildir.
-    first_key = _normalize_lookup_text(
-        matches[0].get("patient_name_full")
-        or matches[0].get("patient_name")
+    patient = matches[0]
+    full_name = _patient_display_name(patient)
+
+    # Tek bir doğal hasta sorusunu ("Sümeyra Yılmaz en son ne zaman geldi?")
+    # isim + soru diye parçalama. Parçalama yalnızca gerçekten çoklu soruysa yapılır.
+    if _contains_multiple_questions(question):
+        question_parts = _split_multi_question(question) or [question]
+    else:
+        question_parts = [_strip_active_screen_prefix(question)]
+
+    normalized_question = _normalize_lookup_text(
+        _strip_active_screen_prefix(question)
     )
+    normalized_name = _normalize_lookup_text(full_name)
 
-    same_name_matches = [
-        row
-        for row in matches
-        if _normalize_lookup_text(
-            row.get("patient_name_full")
-            or row.get("patient_name")
-        )
-        == first_key
-    ]
-
-    if len(same_name_matches) > 1:
-        display_name = (
-            matches[0].get("patient_name_full")
-            or matches[0].get("patient_name")
-            or "Bu isim"
-        )
+    # Sadece hasta adı yazıldıysa genel hasta özeti güvenlidir.
+    if (
+        len(question_parts) == 1
+        and normalized_question == normalized_name
+    ):
         return (
-            f"{display_name} adına birden fazla hasta kaydı eşleşiyor. "
-            "Yanlış kişiyi göstermemek için daha ayırt edici bilgiyle arama yap.",
-            same_name_matches[:10],
+            _patient_compact_fact_line(patient),
+            [patient],
             None,
             True,
         )
 
-    patient = matches[0]
+    # Aynı mesajda çok soru varsa hepsini aynı hasta üzerinden cevapla.
+    if len(question_parts) > 1:
+        answers: list[str] = []
+        combined_items: list[dict] = []
+        combined_action = None
 
-    full_name = str(
-        patient.get("patient_name_full")
-        or patient.get("patient_name")
-        or "Hasta"
+        for part in question_parts:
+            kind = _patient_question_kind(part)
+
+            if kind == "unknown":
+                answers.append(
+                    f"“{part.strip()}” sorusunu mevcut hasta verisinden "
+                    "güvenilir şekilde cevaplayamıyorum."
+                )
+                continue
+
+            part_answer, part_items, part_action = _answer_patient_kind(
+                patient=patient,
+                kind=kind,
+            )
+
+            if part_answer:
+                answers.append(part_answer)
+
+            for item in part_items:
+                if item not in combined_items:
+                    combined_items.append(item)
+
+            if part_action:
+                combined_action = part_action
+
+        if answers:
+            return (
+                f"{full_name} için:\n- " + "\n- ".join(answers),
+                combined_items[:20] or [patient],
+                combined_action,
+                True,
+            )
+
+    kind = _patient_question_kind(question)
+
+    if kind == "unknown":
+        return (
+            f"{full_name} için bu soruyu mevcut hasta verisinden "
+            "güvenilir şekilde cevaplayamıyorum.",
+            [patient],
+            None,
+            True,
+        )
+
+    answer, items, action = _answer_patient_kind(
+        patient=patient,
+        kind=kind,
     )
 
-    visit_count = _numeric_value(
+    return answer, items, action, True
+
+
+def _answer_patient_kind(
+    patient: dict,
+    kind: str,
+) -> tuple[str, list[dict], str | None]:
+    full_name = _patient_display_name(patient)
+
+    visit_count = int(round(_numeric_value(
         patient,
         ["visit_count", "transaction_count"],
-    )
+    )))
     turnover = _numeric_value(
         patient,
         [
@@ -1340,41 +1707,119 @@ def _patient_lookup_answer(
             "revenue",
         ],
     )
-    last_visit = str(
-        patient.get("last_visit")
-        or "-"
-    )
-    segment = str(
-        patient.get("segment")
-        or "Belirlenemedi"
-    )
-    risk_level = str(
-        patient.get("risk_level")
-        or "Belirlenemedi"
-    )
+    last_visit = str(patient.get("last_visit") or "-")
+    segment = str(patient.get("segment") or "Belirlenemedi")
+    risk_level = str(patient.get("risk_level") or "Belirlenemedi")
+    risk_reason = str(patient.get("risk_reason") or "").strip()
 
-    answer = (
-        f"{full_name} için doğrulanmış hasta özeti: "
-        f"{int(round(visit_count))} ziyaret, "
-        f"{_format_number(turnover, 2)} TL ciro, "
-        f"son ziyaret {last_visit}, "
-        f"segment {segment}, "
-        f"kayıp riski {risk_level}."
-    )
-
-    action = None
-    if risk_level.casefold() in {
-        "yüksek",
-        "kritik",
-        "high",
-        "critical",
-    }:
-        action = (
-            "Bu hastanın son ziyaret tarihini ve geçmiş alışveriş "
-            "örüntüsünü takip et."
+    if kind == "last_visit":
+        return (
+            f"En son {last_visit} tarihinde gelmiş.",
+            [patient],
+            None,
         )
 
-    return answer, [patient], action, True
+    if kind == "visit_count":
+        return (
+            f"Analiz döneminde {visit_count} kez gelmiş.",
+            [patient],
+            None,
+        )
+
+    if kind == "turnover":
+        return (
+            f"Toplam alışveriş/ciro katkısı {_format_number(turnover, 2)} TL.",
+            [patient],
+            None,
+        )
+
+    if kind == "risk_reason":
+        if risk_reason:
+            return (
+                f"Kayıp riski {risk_level}. {risk_reason}",
+                [patient],
+                None,
+            )
+
+        return (
+            f"Kayıp riski {risk_level}; ancak kaynak veride daha ayrıntılı "
+            "bir risk gerekçesi bulunmuyor.",
+            [patient],
+            None,
+        )
+
+    if kind == "doctor_history":
+        doctors = _safe_list(patient.get("doctor_history"))
+        if not doctors:
+            return (
+                "Bu hasta için doğrulanmış doktor geçmişi kaynak veride bulunmuyor.",
+                [patient],
+                None,
+            )
+
+        doctor_names = [
+            str(item.get("doctor_name") or "Bilinmeyen doktor")
+            for item in doctors[:5]
+        ]
+
+        return (
+            "İlişkili doktorlar: " + ", ".join(doctor_names) + ".",
+            doctors[:10],
+            None,
+        )
+
+    if kind == "recent_products":
+        products = _safe_list(patient.get("recent_products"))
+        if not products:
+            return (
+                "Son aldığı ürün/ilaç bilgisi kaynak veride bulunmuyor.",
+                [patient],
+                None,
+            )
+
+        product_names = [
+            str(item.get("product_name") or "Bilinmeyen ürün")
+            for item in products[:5]
+        ]
+
+        return (
+            "Son aldığı ürünlerden öne çıkanlar: "
+            + ", ".join(product_names)
+            + ".",
+            products[:10],
+            None,
+        )
+
+    if kind == "recovery_action":
+        if risk_level.casefold() in {"kritik", "yüksek", "high", "critical"}:
+            action = (
+                "Son ziyaret aralığını ve geçmiş alışveriş düzenini kontrol et; "
+                "uygun bir hatırlatma veya ihtiyaç kontrolü planla."
+            )
+        elif risk_level.casefold() in {"orta", "medium"}:
+            action = (
+                "Hasta normal ziyaret ritmini aşmaya başladıysa nazik bir "
+                "hatırlatma veya ihtiyaç kontrolü planla."
+            )
+        else:
+            action = (
+                "Şu an güçlü bir kayıp sinyali yok; ziyaret düzenini takip etmeye devam et."
+            )
+
+        prefix = f"{risk_reason} " if risk_reason else ""
+        return (
+            f"{prefix}Önerim: {action}",
+            [patient],
+            action,
+        )
+
+    return (
+        f"{full_name} için bu soruyu mevcut hasta verisinden "
+        "güvenilir şekilde cevaplayamıyorum.",
+        [patient],
+        None,
+    )
+
 
 def _product_list_answer(
     *,
@@ -1434,10 +1879,145 @@ def _product_list_answer(
     return answer, items, action
 
 
+
+def _is_supported_domain_question(question: str | None) -> bool:
+    """
+    AYÇA'nın deterministik olarak cevaplaması güvenli olan alanları ayırır.
+    Bilinmeyen/domain-dışı bir soru general_summary'ye düşüp stok/finans
+    cevabı üretmemelidir.
+    """
+    q = _strip_active_screen_prefix(question)
+    normalized = normalize_question(q)
+    if not normalized:
+        return False
+
+    detected = detect_intent(q)
+    if detected.get("score", 0) > 0:
+        return True
+
+    operational_phrases = [
+        "bugün ne yapmalıyım",
+        "bugun ne yapmaliyim",
+        "önceliğim ne",
+        "onceligim ne",
+        "öncelik ne",
+        "oncelik ne",
+        "eczane durumu",
+        "genel durum",
+        "özet",
+        "ozet",
+        "analiz",
+        "aksiyon",
+    ]
+    return any(phrase in normalized for phrase in operational_phrases)
+
+
+def _out_of_domain_answer(question: str | None) -> dict:
+    return {
+        "success": True,
+        "intent": "out_of_domain",
+        "sub_intent": "out_of_domain",
+        "answer": (
+            "Bu konu AYÇA Insight'ın eczane analiz kapsamının dışında. "
+            "Stok, finans, sipariş, ürün, hasta, doktor veya risk verileriyle "
+            "ilgili yardımcı olabilirim."
+        ),
+        "items": [],
+        "recommended_action": None,
+        "context": {
+            "question": question,
+            "intent": "out_of_domain",
+        },
+        "validation": {
+            "valid": True,
+            "warnings": [],
+            "analysis_confidence_score": 100,
+            "available_fact_count": 0,
+        },
+    }
+
+
 def create_deterministic_answer(
     question: str,
     analysis_result: dict | None,
 ) -> dict:
+    small_talk = _small_talk_answer(question)
+    if small_talk:
+        return {
+            "success": True,
+            "intent": "small_talk",
+            "sub_intent": "small_talk",
+            "answer": small_talk,
+            "items": [],
+            "recommended_action": None,
+            "context": {
+                "question": question,
+                "intent": "small_talk",
+            },
+            "validation": {
+                "valid": True,
+                "warnings": [],
+                "analysis_confidence_score": 100,
+                "available_fact_count": 0,
+            },
+        }
+
+    if _contains_multiple_questions(question):
+        return {
+            "success": True,
+            "intent": "general",
+            "sub_intent": "multi_question_guard",
+            "answer": (
+                "Aynı mesajda birden fazla soru var. "
+                "Yanlış veya karışık cevap vermemek için soruları tek tek sorabilir misiniz?"
+            ),
+            "items": [],
+            "recommended_action": None,
+            "context": {
+                "question": question,
+                "intent": "general",
+            },
+            "validation": {
+                "valid": True,
+                "warnings": [],
+                "analysis_confidence_score": 100,
+                "available_fact_count": 0,
+            },
+        }
+
+    # Domain dışı sorular general_summary'ye düşmemeli.
+    # Hasta adı/follow-up eşleşmesi aşağıdaki patient routing tarafından ele alınır;
+    # burada yalnızca açıkça desteklenmeyen soruları kesiyoruz.
+    analysis_for_domain = _safe_dict(analysis_result)
+    patient_for_domain = _safe_dict(analysis_for_domain.get("patient_metrics"))
+    patient_rows_for_domain = (
+        _safe_list(patient_for_domain.get("patient_lookup"))
+        or _safe_list(patient_for_domain.get("patients"))
+    )
+    has_patient_match = bool(
+        _find_patient_matches(question, patient_rows_for_domain)
+    )
+
+    # Aktif hasta adı frontend tarafından soruya/context'e eklenmiş olsa bile
+    # "hava nasıl" gibi domain dışı bir mesaj hasta sorusuna dönüşmemeli.
+    # Hasta eşleşmesi tek başına domain desteği değildir; hasta adı tek başına
+    # yazılmışsa veya gerçek bir hasta follow-up kalıbı varsa izin verilir.
+    clean_question_for_domain = _strip_active_screen_prefix(question)
+    clean_lookup_for_domain = _normalize_lookup_text(clean_question_for_domain)
+    matched_name_keys_for_domain = {
+        _normalize_lookup_text(_patient_display_name(row))
+        for row in patient_rows_for_domain
+        if _patient_display_name(row)
+    }
+    is_patient_name_only = clean_lookup_for_domain in matched_name_keys_for_domain
+
+    if (
+        not _is_supported_domain_question(clean_question_for_domain)
+        and not _looks_like_patient_followup(clean_question_for_domain)
+        and not is_patient_name_only
+    ):
+        return _out_of_domain_answer(clean_question_for_domain)
+
     context = build_copilot_context(
         question,
         analysis_result,
@@ -1447,6 +2027,27 @@ def create_deterministic_answer(
         "intent",
         "general",
     )
+
+    # Hasta lookup / follow-up varsa intent routing'den önce hasta alanını önceliklendir.
+    # Frontend aktif hastayı soruya eklediği için isim eşleşmesi burada deterministik olur.
+    patient_context_for_routing = _safe_dict(context.get("patient"))
+    patient_lookup_for_routing = _safe_list(
+        patient_context_for_routing.get("patient_lookup")
+    ) or _safe_list(
+        patient_context_for_routing.get("patients")
+    )
+    patient_matches_for_routing = _find_patient_matches(
+        question,
+        patient_lookup_for_routing,
+    )
+
+    if patient_matches_for_routing and (
+        _looks_like_patient_followup(question)
+        or "hasta" in normalize_question(question)
+        or intent in {"patient", "doctor", "product", "general"}
+    ):
+        intent = "patient"
+        context["intent"] = "patient"
     sub_intent = detect_sub_intent(
         question,
         intent,
@@ -1474,7 +2075,7 @@ def create_deterministic_answer(
 
     if patient_lookup_handled:
         intent = "patient"
-        sub_intent = "patient_lookup"
+        sub_intent = f"patient_lookup_{_patient_question_kind(question)}"
         answer = patient_lookup_answer
         items = patient_lookup_items
         action = patient_lookup_action
@@ -1600,10 +2201,9 @@ def create_deterministic_answer(
         )
 
         answer = (
-            f"{total_patient_count} toplam hasta, "
-            f"{patient.get('vip_patient_count', 0)} VIP hasta ve "
-            f"{patient.get('churn_risk_count', 0)} kayıp riski taşıyan "
-            "hasta bulunuyor."
+            f"Analizde {total_patient_count} benzersiz hasta bulunuyor. "
+            f"Bunların {patient.get('vip_patient_count', 0)} tanesi VIP segmentinde; "
+            f"{patient.get('churn_risk_count', 0)} hastada kayıp riski sinyali var."
         )
 
     elif sub_intent == "critical_products":

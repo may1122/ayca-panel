@@ -336,6 +336,8 @@ def calculate_patient_metrics(
     transaction_no_column = columns["transaction_no"]
     date_column = columns["date"]
     turnover_column = columns["turnover"]
+    quantity_column = columns["quantity"]
+    product_column = columns["product"]
     risk_type_column = columns["risk_type"]
 
     sales["_turnover"] = numeric_series(
@@ -374,6 +376,15 @@ def calculate_patient_metrics(
         sales,
         transaction_no_column,
     )
+    sales["_product"] = text_series(
+        sales,
+        product_column,
+    )
+    sales["_quantity"] = numeric_series(
+        sales,
+        quantity_column,
+        0,
+    )
     sales["_risk_type"] = text_series(
         sales,
         risk_type_column,
@@ -390,6 +401,9 @@ def calculate_patient_metrics(
         sales,
         patient_column=patient_column,
         transaction_no_column=transaction_no_column,
+        doctor_column=doctor_column,
+        product_column=product_column,
+        quantity_column=quantity_column,
         limit=None,
     )
     patients = all_patients[:100]
@@ -397,7 +411,7 @@ def calculate_patient_metrics(
     lapsed_patients = [
         patient
         for patient in all_patients
-        if str(patient.get("risk_level", "")).lower() == "kritik"
+        if bool(patient.get("is_lapsed"))
     ][:100]
 
     institutions = build_institution_metrics(
@@ -504,7 +518,7 @@ def calculate_patient_metrics(
         "lapsed_patient_count": sum(
             1
             for patient in all_patients
-            if str(patient.get("risk_level", "")).lower() == "kritik"
+            if bool(patient.get("is_lapsed"))
         ),
         "doctors": doctors,
         "patients": patients,
@@ -583,10 +597,26 @@ def build_doctor_metrics(
     )[:50]
 
 
+
+def _format_patient_interval(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "0"
+
+    if abs(number - round(number)) < 0.05:
+        return str(int(round(number)))
+
+    return f"{number:.1f}".replace(".", ",")
+
+
 def build_patient_metrics(
     sales: pd.DataFrame,
     patient_column: str | None,
     transaction_no_column: str | None,
+    doctor_column: str | None = None,
+    product_column: str | None = None,
+    quantity_column: str | None = None,
     limit: int | None = 100,
 ) -> list[dict[str, Any]]:
     if not patient_column:
@@ -628,17 +658,157 @@ def build_patient_metrics(
         )
 
         days_since_visit = None
-
         if pd.notna(last_visit_value):
             days_since_visit = max(
                 0,
                 int((reference_date - last_visit_value).days),
             )
 
-        # VIP:
-        # Hem düzenli gelen hem de ekonomik değeri yüksek hastalar.
-        # Tek başına yüksek ciro veya tek başına ziyaret sıklığı
-        # VIP statüsü oluşturmaz.
+        visit_dates = (
+            group["_date"]
+            .dropna()
+            .dt.normalize()
+            .drop_duplicates()
+            .sort_values()
+        )
+
+        average_visit_interval_days = None
+        previous_visit_date = None
+
+        if len(visit_dates) >= 2:
+            date_diffs = visit_dates.diff().dropna().dt.days
+            if not date_diffs.empty:
+                average_visit_interval_days = safe_float(date_diffs.mean())
+            previous_visit_date = visit_dates.iloc[-2]
+
+        delay_ratio = None
+
+        if (
+            days_since_visit is not None
+            and average_visit_interval_days is not None
+            and average_visit_interval_days > 0
+        ):
+            delay_ratio = safe_float(
+                days_since_visit / average_visit_interval_days
+            )
+
+        # Risk seviyesi:
+        # Statik gün eşiklerini hastanın kendi ziyaret ritmiyle birlikte
+        # değerlendiriyoruz. Böylece 100 günde bir düzenli gelen hastayı
+        # 90. günde "kritik" saymak veya 15 günde bir gelen hastanın
+        # ciddi gecikmesini gözden kaçırmak engellenir.
+        if days_since_visit is None:
+            risk_level = "Bilinmiyor"
+            risk_reason = "Son ziyaret tarihi doğrulanamadı."
+        else:
+            cadence_escalation = None
+
+            if delay_ratio is not None:
+                if delay_ratio >= 3.0:
+                    cadence_escalation = "Kritik"
+                elif delay_ratio >= 2.0:
+                    cadence_escalation = "Yüksek"
+                elif delay_ratio >= 1.5:
+                    cadence_escalation = "Orta"
+
+            static_level = (
+                "Kritik"
+                if days_since_visit >= 90
+                else "Yüksek"
+                if days_since_visit >= 60
+                else "Orta"
+                if days_since_visit >= 30
+                else "Düşük"
+            )
+
+            risk_rank = {
+                "Düşük": 1,
+                "Orta": 2,
+                "Yüksek": 3,
+                "Kritik": 4,
+            }
+
+            if cadence_escalation is not None:
+                # Uzun doğal ziyaret aralığı olan hastalarda sadece statik 90 gün
+                # nedeniyle gereksiz kritik işaretleme yapmamak için cadence'i
+                # dengeleyici sinyal olarak kullan.
+                if (
+                    average_visit_interval_days is not None
+                    and average_visit_interval_days >= 60
+                    and delay_ratio < 1.5
+                ):
+                    risk_level = "Düşük"
+                else:
+                    risk_level = (
+                        cadence_escalation
+                        if risk_rank[cadence_escalation] >= risk_rank[static_level]
+                        else static_level
+                    )
+            else:
+                if (
+                    average_visit_interval_days is not None
+                    and average_visit_interval_days >= 60
+                    and delay_ratio is not None
+                    and delay_ratio < 1.5
+                ):
+                    risk_level = "Düşük"
+                else:
+                    risk_level = static_level
+
+            if (
+                average_visit_interval_days is not None
+                and delay_ratio is not None
+            ):
+                risk_reason = (
+                    f"Son ziyaretten bu yana {days_since_visit} gün geçti; "
+                    f"ortalama ziyaret aralığı yaklaşık "
+                    f"{_format_patient_interval(average_visit_interval_days)} gün. "
+                    f"Gecikme oranı {delay_ratio:.1f}x."
+                )
+            else:
+                risk_reason = (
+                    f"Son ziyaretten bu yana {days_since_visit} gün geçti."
+                )
+
+        # Gerçek "gelmeyi bırakan" sinyali risk seviyesinden ayrıdır.
+        # Hasta en az 2 ziyaretlik geçmişe sahip olmalı ve:
+        # - ya son ziyaretinden 90+ gün geçmiş olmalı ve kendi ritminin
+        #   en az 1.5 katını aşmış olmalı,
+        # - ya da ritmin en az 3 katı gecikmiş olmalı.
+        is_lapsed = False
+        lapsed_reason = ""
+
+        if (
+            safe_int(visit_count) >= 2
+            and days_since_visit is not None
+        ):
+            if (
+                delay_ratio is not None
+                and delay_ratio >= 3.0
+            ):
+                is_lapsed = True
+                lapsed_reason = (
+                    f"Hasta normal ziyaret ritminin {delay_ratio:.1f} katı "
+                    "kadar gecikmiş."
+                )
+            elif (
+                days_since_visit >= 90
+                and (
+                    delay_ratio is None
+                    or delay_ratio >= 1.5
+                )
+            ):
+                is_lapsed = True
+                lapsed_reason = (
+                    f"Son ziyaretten bu yana {days_since_visit} gün geçti"
+                    + (
+                        f" ve normal ritmin {delay_ratio:.1f} katı aşıldı."
+                        if delay_ratio is not None
+                        else "."
+                    )
+                )
+
+        # VIP: hem düzenli hem ekonomik değeri yüksek hasta.
         if visit_count >= 8 and turnover >= 15000:
             segment = "VIP"
         elif visit_count >= 4:
@@ -648,25 +818,152 @@ def build_patient_metrics(
         else:
             segment = "Yeni"
 
-        if days_since_visit is None:
-            risk_level = "Bilinmiyor"
-        elif days_since_visit >= 90:
-            risk_level = "Kritik"
-        elif days_since_visit >= 60:
-            risk_level = "Yüksek"
-        elif days_since_visit >= 30:
-            risk_level = "Orta"
+        doctor_history: list[dict[str, Any]] = []
+        if doctor_column:
+            doctor_working = group[
+                group["_doctor"].ne("")
+                & ~group["_doctor"].str.lower().isin(
+                    {"nan", "none", "belirtilmemiş", "belirtilmemis"}
+                )
+            ].copy()
+
+            if not doctor_working.empty:
+                for doctor_name, doctor_group in doctor_working.groupby("_doctor"):
+                    doctor_history.append(
+                        {
+                            "doctor_name": str(doctor_name),
+                            "visit_count": safe_int(
+                                doctor_group["_transaction_no"]
+                                .replace("", pd.NA)
+                                .nunique()
+                                if transaction_no_column
+                                else len(doctor_group)
+                            ),
+                            "turnover": safe_float(
+                                doctor_group["_turnover"].sum()
+                            ),
+                            "last_visit": (
+                                doctor_group["_date"].max().strftime("%d.%m.%Y")
+                                if doctor_group["_date"].notna().any()
+                                else "-"
+                            ),
+                        }
+                    )
+
+                doctor_history = sorted(
+                    doctor_history,
+                    key=lambda item: (
+                        item["visit_count"],
+                        item["turnover"],
+                    ),
+                    reverse=True,
+                )[:10]
+
+        recent_products: list[dict[str, Any]] = []
+        if product_column:
+            product_working = group[
+                group["_product"].ne("")
+                & ~group["_product"].str.lower().isin(
+                    {"nan", "none", "belirtilmemiş", "belirtilmemis"}
+                )
+            ].copy()
+
+            if not product_working.empty:
+                product_working = product_working.sort_values(
+                    "_date",
+                    ascending=False,
+                    na_position="last",
+                )
+                seen_products: set[str] = set()
+
+                for _, product_row in product_working.iterrows():
+                    product_name = str(product_row["_product"]).strip()
+                    product_key = normalize_text(product_name)
+
+                    if not product_key or product_key in seen_products:
+                        continue
+
+                    seen_products.add(product_key)
+                    product_date = product_row["_date"]
+
+                    recent_products.append(
+                        {
+                            "product_name": product_name,
+                            "quantity": (
+                                safe_int(product_row["_quantity"])
+                                if quantity_column
+                                else None
+                            ),
+                            "date": (
+                                product_date.strftime("%d.%m.%Y")
+                                if pd.notna(product_date)
+                                else "-"
+                            ),
+                        }
+                    )
+
+                    if len(recent_products) >= 10:
+                        break
+
+        recent_visits: list[dict[str, Any]] = []
+        visit_working = group.copy()
+
+        if transaction_no_column:
+            visit_working["_visit_key"] = (
+                visit_working["_transaction_no"].replace("", pd.NA)
+            )
         else:
-            risk_level = "Düşük"
+            visit_working["_visit_key"] = visit_working.index.astype(str)
+
+        visit_working = visit_working.sort_values(
+            "_date",
+            ascending=False,
+            na_position="last",
+        )
+
+        for _, visit_group in visit_working.groupby(
+            "_visit_key",
+            dropna=False,
+            sort=False,
+        ):
+            visit_date = (
+                visit_group["_date"].max()
+                if visit_group["_date"].notna().any()
+                else pd.NaT
+            )
+
+            recent_visits.append(
+                {
+                    "date": (
+                        visit_date.strftime("%d.%m.%Y")
+                        if pd.notna(visit_date)
+                        else "-"
+                    ),
+                    "turnover": safe_float(
+                        visit_group["_turnover"].sum()
+                    ),
+                    "doctor_name": (
+                        next(
+                            (
+                                value
+                                for value in visit_group["_doctor"].tolist()
+                                if str(value).strip()
+                            ),
+                            "",
+                        )
+                        if doctor_column
+                        else ""
+                    ),
+                }
+            )
+
+            if len(recent_visits) >= 10:
+                break
 
         records.append(
             {
-                # Ekranın varsayılan ve güvenli görünümünde kullanılır.
                 "patient_name": mask_patient_name(patient_name),
-
-                # Yalnızca kullanıcı açık onay verdiğinde frontend'de gösterilir.
                 "patient_name_full": str(patient_name).strip(),
-
                 "segment": segment,
                 "visit_count": safe_int(visit_count),
                 "turnover": turnover,
@@ -675,7 +972,29 @@ def build_patient_metrics(
                     if pd.notna(last_visit_value)
                     else "-"
                 ),
+                "previous_visit": (
+                    previous_visit_date.strftime("%d.%m.%Y")
+                    if previous_visit_date is not None
+                    else "-"
+                ),
+                "days_since_visit": (
+                    safe_int(days_since_visit)
+                    if days_since_visit is not None
+                    else None
+                ),
+                "average_visit_interval_days": (
+                    safe_float(average_visit_interval_days)
+                    if average_visit_interval_days is not None
+                    else None
+                ),
+                "visit_delay_ratio": delay_ratio,
                 "risk_level": risk_level,
+                "risk_reason": risk_reason,
+                "is_lapsed": is_lapsed,
+                "lapsed_reason": lapsed_reason,
+                "doctor_history": doctor_history,
+                "recent_products": recent_products,
+                "recent_visits": recent_visits,
             }
         )
 
