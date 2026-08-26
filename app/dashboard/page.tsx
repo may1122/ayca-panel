@@ -200,6 +200,12 @@ type FinancePeriodMetric = {
   row_count?: number;
   week_offset?: number;
   is_latest_week?: boolean;
+  daily_revenue?: FinanceDailyRevenue[];
+  sgk_turnover?: number;
+  cash_turnover?: number;
+  returned_turnover?: number;
+  other_turnover?: number;
+  turnover_breakdown_available?: boolean;
 };
 
 type CopilotMessage = {
@@ -263,6 +269,12 @@ type AnalyzeResult = {
     period_metrics?: Partial<Record<FinancePeriod, FinancePeriodMetric>>;
     week_metrics?: FinancePeriodMetric[];
     daily_revenue?: FinanceDailyRevenue[];
+    sgk_turnover?: number;
+    cash_turnover?: number;
+    returned_turnover?: number;
+    other_turnover?: number;
+    turnover_breakdown_available?: boolean;
+    sales_type_column?: string | null;
     top_products?: FinanceProduct[];
   };
   risk_metrics?: {
@@ -372,6 +384,7 @@ export default function DashboardPage() {
   const [isCopilotThinking, setIsCopilotThinking] = useState(false);
   const [isAssistantDrawerOpen, setIsAssistantDrawerOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isTurnoverDetailOpen, setIsTurnoverDetailOpen] = useState(false);
 
   const hasConversationStarted = copilotMessages.some(
     (message) => message.role === "user",
@@ -771,14 +784,6 @@ export default function DashboardPage() {
     morningBriefing?.top_actions?.[0] ??
     "Analiz tamamlandığında AYÇA bugünün öncelikli kararını burada oluşturur.";
 
-  const financeDailyRevenue = (
-    analyzeResult?.finance_metrics?.daily_revenue ?? []
-  )
-    .slice(-7)
-    .map((item) => ({
-      day: item.label,
-      value: item.revenue,
-    }));
 
   const financeTopProducts = (
     analyzeResult?.finance_metrics?.top_products ?? []
@@ -818,10 +823,6 @@ export default function DashboardPage() {
   const expiryMetrics = analyzeResult?.expiry_metrics ?? null;
   const expiryProducts = expiryMetrics?.products ?? [];
 
-  const maximumFinanceRevenue = Math.max(
-    ...financeDailyRevenue.map((item) => item.value),
-    1,
-  );
 
   const zeroStockCount =
     analyzeResult?.risk_metrics?.zero_stock_count ??
@@ -1044,10 +1045,52 @@ export default function DashboardPage() {
     financeMetrics?.period_metrics?.[financePeriod] ??
     null;
 
+  const selectedFinanceDailyRevenue =
+    financePeriod === "week"
+      ? selectedWeekMetric?.daily_revenue ?? []
+      : selectedFinancePeriod?.daily_revenue ??
+        financeMetrics?.daily_revenue ??
+        [];
+
+  const financeDailyRevenue = selectedFinanceDailyRevenue.map((item) => ({
+    day: item.label,
+    value: item.revenue,
+  }));
+
+  const maximumFinanceRevenue = Math.max(
+    ...financeDailyRevenue.map((item) => item.value),
+    1,
+  );
+
   const totalTurnover =
     selectedFinancePeriod?.total_turnover ??
     financeMetrics?.total_turnover ??
     0;
+
+  const sgkTurnover =
+    selectedFinancePeriod?.sgk_turnover ??
+    financeMetrics?.sgk_turnover ??
+    0;
+
+  const cashTurnover =
+    selectedFinancePeriod?.cash_turnover ??
+    financeMetrics?.cash_turnover ??
+    0;
+
+  const returnedTurnover =
+    selectedFinancePeriod?.returned_turnover ??
+    financeMetrics?.returned_turnover ??
+    0;
+
+  const otherTurnover =
+    selectedFinancePeriod?.other_turnover ??
+    financeMetrics?.other_turnover ??
+    0;
+
+  const turnoverBreakdownAvailable =
+    selectedFinancePeriod?.turnover_breakdown_available ??
+    financeMetrics?.turnover_breakdown_available ??
+    false;
 
   const totalProfit =
     selectedFinancePeriod?.total_profit ??
@@ -1447,6 +1490,230 @@ export default function DashboardPage() {
           activeStep={analysisStep}
           tip={analysisTips[analysisTipIndex]}
         />
+      )}
+
+      {isTurnoverDetailOpen && (
+        <div
+          role="presentation"
+          onClick={() => setIsTurnoverDetailOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1200,
+            display: "grid",
+            placeItems: "center",
+            padding: 20,
+            background: "rgba(15, 23, 42, 0.42)",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="turnover-detail-title"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(520px, 100%)",
+              borderRadius: 24,
+              border: "1px solid rgba(15, 138, 108, 0.15)",
+              background: "#ffffff",
+              boxShadow: "0 24px 70px rgba(15, 23, 42, 0.22)",
+              padding: 22,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 16,
+                marginBottom: 18,
+              }}
+            >
+              <div>
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: 11,
+                    fontWeight: 900,
+                    color: "#0f8a6c",
+                    marginBottom: 5,
+                  }}
+                >
+                  {financePeriodDateLabel}
+                </span>
+                <h2
+                  id="turnover-detail-title"
+                  style={{
+                    margin: 0,
+                    fontSize: 22,
+                    color: "#0f172a",
+                  }}
+                >
+                  💰 Ciro Detayı
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsTurnoverDetailOpen(false)}
+                aria-label="Ciro detayını kapat"
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  border: "1px solid #e2e8f0",
+                  background: "#fff",
+                  color: "#475569",
+                  fontSize: 20,
+                  cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                  padding: "14px 16px",
+                  borderRadius: 16,
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <span style={{ fontWeight: 800, color: "#334155" }}>
+                  Toplam Ciro
+                </span>
+                <strong style={{ fontSize: 18, color: "#0f172a" }}>
+                  {totalTurnover.toLocaleString("tr-TR")} ₺
+                </strong>
+              </div>
+
+              {turnoverBreakdownAvailable ? (
+                <>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      padding: "13px 16px",
+                      borderRadius: 16,
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <span style={{ fontWeight: 750, color: "#475569" }}>
+                      🏥 SGK Cirosu
+                    </span>
+                    <strong style={{ color: "#0f172a" }}>
+                      {sgkTurnover.toLocaleString("tr-TR")} ₺
+                    </strong>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      padding: "13px 16px",
+                      borderRadius: 16,
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <span style={{ fontWeight: 750, color: "#475569" }}>
+                      💵 Nakit Ciro
+                    </span>
+                    <strong style={{ color: "#0f172a" }}>
+                      {cashTurnover.toLocaleString("tr-TR")} ₺
+                    </strong>
+                  </div>
+
+                  {returnedTurnover !== 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 16,
+                        padding: "13px 16px",
+                        borderRadius: 16,
+                        border: "1px solid #fecaca",
+                        background: "#fff7f7",
+                      }}
+                    >
+                      <span style={{ fontWeight: 750, color: "#991b1b" }}>
+                        ↩️ İadeli Satış
+                      </span>
+                      <strong style={{ color: "#991b1b" }}>
+                        {returnedTurnover.toLocaleString("tr-TR")} ₺
+                      </strong>
+                    </div>
+                  )}
+
+                  {otherTurnover !== 0 && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 16,
+                        padding: "13px 16px",
+                        borderRadius: 16,
+                        border: "1px solid #e2e8f0",
+                      }}
+                    >
+                      <span style={{ fontWeight: 750, color: "#475569" }}>
+                        Diğer Satışlar
+                      </span>
+                      <strong style={{ color: "#0f172a" }}>
+                        {otherTurnover.toLocaleString("tr-TR")} ₺
+                      </strong>
+                    </div>
+                  )}
+
+                  <p
+                    style={{
+                      margin: "4px 2px 0",
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      color: "#64748b",
+                    }}
+                  >
+                    SGK, satış dosyasındaki “Medula Satış”; nakit ise “Nakit Satış”
+                    kayıtlarından hesaplanır. İadeler toplam ciroya mevcut işaretleriyle
+                    yansır.
+                  </p>
+                </>
+              ) : (
+                <p
+                  style={{
+                    margin: 0,
+                    padding: "14px 16px",
+                    borderRadius: 16,
+                    background: "#fff7ed",
+                    color: "#9a3412",
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Bu dosyada Satış Tipi alanı bulunamadığı için SGK/Nakit kırılımı
+                  oluşturulamadı.
+                </p>
+              )}
+            </div>
+          </section>
+        </div>
       )}
       <aside className={`insight-sidebar ${isMobileMenuOpen ? "mobile-open" : ""}`}>
         <div
@@ -2680,16 +2947,39 @@ export default function DashboardPage() {
         {activeModule === "💰 Finans" && (
           <>
             <section className="insight-kpi-grid">
-              <div className="insight-kpi finance-kpi">
+              <div
+                className="insight-kpi finance-kpi"
+                role="button"
+                tabIndex={0}
+                aria-label="Toplam ciro detayını aç"
+                onClick={() => setIsTurnoverDetailOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setIsTurnoverDetailOpen(true);
+                  }
+                }}
+                style={{ cursor: "pointer", position: "relative" }}
+                title="SGK ve nakit ciro detayını gör"
+              >
                 <span>💰 Toplam Ciro</span>
                 <strong>
-                  {morningBriefing
-                    ? `${morningBriefing.summary.total_turnover.toLocaleString(
-                        "tr-TR",
-                      )} ₺`
+                  {analyzeResult?.finance_metrics?.success
+                    ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
                     : "-"}
                 </strong>
                 <p>Analiz dönemindeki toplam satış</p>
+                <small
+                  style={{
+                    display: "inline-block",
+                    marginTop: 6,
+                    fontSize: 10,
+                    fontWeight: 850,
+                    color: "#0f8a6c",
+                  }}
+                >
+                  Detayı gör →
+                </small>
               </div>
 
               <div className="insight-kpi finance-kpi">
@@ -2777,7 +3067,7 @@ export default function DashboardPage() {
 
             <section className="insight-card">
               <h2>📊 Günlük Ciro Dağılımı</h2>
-              <p>Son 7 günlük gerçek satış performansı</p>
+              <p>{financePeriodDateLabel} · günlük gerçek satış performansı</p>
 
               <div className="ayca-chart-shell ayca-chart-large">
                 <ResponsiveContainer width="100%" height="100%">

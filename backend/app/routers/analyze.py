@@ -1,5 +1,6 @@
 from io import BytesIO
 from datetime import datetime
+import time
 
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
@@ -248,9 +249,17 @@ def build_analysis(
     payload: AnalyzeRequest,
     persist_metrics: bool = True,
 ):
+    analysis_started = time.perf_counter()
+
+    def log_step(name: str, started: float):
+        elapsed = time.perf_counter() - started
+        print(f"[AYCA PERF] {name}: {elapsed:.2f} sn")
+
+    step = time.perf_counter()
     company = validate_company(
         payload.company_id
     )
+    log_step("validate_company", step)
 
     validate_storage_path(
         payload.company_id,
@@ -270,62 +279,82 @@ def build_analysis(
         "Ürün satış",
     )
 
+    step = time.perf_counter()
     inventory_df = load_dataframe(
         payload.inventory_path,
         "Envanter",
     )
+    log_step("inventory_excel_load", step)
 
+    step = time.perf_counter()
     sales_df = load_dataframe(
         payload.sales_path,
         "Satış",
     )
+    log_step("sales_excel_load", step)
 
+    step = time.perf_counter()
     product_df = load_dataframe(
         payload.product_path,
         "Ürün satış",
     )
+    log_step("product_excel_load", step)
 
+    step = time.perf_counter()
     inventory_metrics = calculate_inventory_metrics(
         inventory_df
     )
+    log_step("inventory_engine", step)
 
+    step = time.perf_counter()
     finance_metrics = calculate_finance_metrics(
         sales_df=sales_df,
         product_df=product_df,
     )
+    log_step("finance_engine", step)
 
+    step = time.perf_counter()
     order_suggestions = calculate_order_suggestions(
         inventory_df=inventory_df,
         product_df=product_df,
         sales_df=sales_df,
     )
+    log_step("order_engine", step)
 
+    step = time.perf_counter()
     risk_metrics = calculate_risk_metrics(
         inventory_df=inventory_df,
         product_df=product_df,
         sales_df=sales_df,
     )
+    log_step("risk_engine", step)
 
+    step = time.perf_counter()
     expiry_metrics = calculate_expiry_metrics(
         inventory_df=inventory_df,
         product_df=product_df,
         sales_df=sales_df,
     )
+    log_step("expiry_engine", step)
 
+    step = time.perf_counter()
     patient_metrics = calculate_patient_metrics(
         sales_df=sales_df,
         product_df=product_df,
     )
+    log_step("patient_engine", step)
 
     # ---------------------------------------------------------
     # AYÇA PRODUCT INTELLIGENCE V1
     # Envanter + Ürün Bazında Toplamlar verisini birleştirir.
     # ---------------------------------------------------------
 
+    step = time.perf_counter()
     product_intelligence = calculate_product_intelligence(
         inventory_df=inventory_df,
         product_df=product_df,
     )
+    log_step("product_intelligence_engine", step)
 
     # Product Intelligence'ı şimdilik engine_status içine
     # dahil etmiyoruz.
@@ -334,6 +363,7 @@ def build_analysis(
     # Böylece yeni motorun olası bir problemi mevcut çalışan
     # analiz sisteminin complete/partial durumunu etkilemez.
 
+    step = time.perf_counter()
     engine_status = _engine_status(
         inventory_metrics=inventory_metrics,
         finance_metrics=finance_metrics,
@@ -342,7 +372,9 @@ def build_analysis(
         expiry_metrics=expiry_metrics,
         patient_metrics=patient_metrics,
     )
+    log_step("engine_status", step)
 
+    step = time.perf_counter()
     decision_summary = create_decision_summary(
         inventory_metrics=inventory_metrics,
         finance_metrics=finance_metrics,
@@ -353,7 +385,9 @@ def build_analysis(
             "confidence_score"
         ],
     )
+    log_step("decision_summary", step)
 
+    step = time.perf_counter()
     morning_briefing = create_morning_briefing(
         inventory_metrics=inventory_metrics,
         finance_metrics=finance_metrics,
@@ -361,10 +395,12 @@ def build_analysis(
         risk_metrics=risk_metrics,
         expiry_metrics=expiry_metrics,
     )
+    log_step("morning_briefing", step)
 
     dashboard_metrics = None
 
     if persist_metrics and engine_status["success"]:
+        step = time.perf_counter()
         dashboard_metrics = upsert_dashboard_metrics(
             company_id=payload.company_id,
             inventory_metrics=inventory_metrics,
@@ -372,6 +408,12 @@ def build_analysis(
             order_suggestions=order_suggestions,
             risk_metrics=risk_metrics,
         )
+        log_step("dashboard_upsert", step)
+
+    print(
+        f"[AYCA PERF] TOTAL ANALYSIS: "
+        f"{time.perf_counter() - analysis_started:.2f} sn"
+    )
 
     return {
         "success": engine_status["success"],

@@ -64,15 +64,55 @@ def numeric_series(
     if not column or column not in dataframe.columns:
         return pd.Series(default, index=dataframe.index, dtype="float64")
 
-    values = (
-        dataframe[column]
-        .astype(str)
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-        .str.replace(r"[^0-9.\-]", "", regex=True)
-    )
+    def parse_number(value: Any) -> float:
+        if value is None or pd.isna(value):
+            return float(default)
 
-    return pd.to_numeric(values, errors="coerce").fillna(default)
+        # Excel/pandas hücresi zaten sayısalsa ondalık işaretine dokunma.
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+
+        text = str(value).strip()
+        if not text:
+            return float(default)
+
+        text = re.sub(r"[^0-9,\.\-]", "", text)
+
+        if not text or text in {"-", ".", ","}:
+            return float(default)
+
+        # Hem nokta hem virgül varsa son görülen ayırıcıyı ondalık kabul et.
+        # 1.234,56 -> 1234.56
+        # 1,234.56 -> 1234.56
+        if "." in text and "," in text:
+            if text.rfind(",") > text.rfind("."):
+                text = text.replace(".", "").replace(",", ".")
+            else:
+                text = text.replace(",", "")
+
+        elif "," in text:
+            # Türkçe ondalık: 481,17 -> 481.17
+            # Çoklu virgül varsa sonuncuyu ondalık kabul et.
+            if text.count(",") > 1:
+                parts = text.split(",")
+                text = "".join(parts[:-1]) + "." + parts[-1]
+            else:
+                text = text.replace(",", ".")
+
+        elif "." in text:
+            # Tek noktalı Excel/string değerini ondalık olarak koru:
+            # 481.17 -> 481.17
+            # Birden fazla nokta varsa sonuncuyu ondalık kabul et.
+            if text.count(".") > 1:
+                parts = text.split(".")
+                text = "".join(parts[:-1]) + "." + parts[-1]
+
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return float(default)
+
+    return dataframe[column].apply(parse_number).astype("float64")
 
 
 def text_series(

@@ -30,6 +30,51 @@ def _calculate_transaction_count(df: pd.DataFrame) -> tuple[int, str | None, boo
     return int(values.nunique()), transaction_column, False
 
 
+def _calculate_turnover_breakdown(df: pd.DataFrame) -> dict:
+    """Toplam ciroyu Satış Tipi üzerinden SGK/Nakit/İade/Diğer kırılımına ayırır.
+
+    Toplam ciro formülünü değiştirmez; yalnızca mevcut _amount değerlerini
+    sınıflandırır. SGK için Medula Satış, nakit için Nakit Satış kullanılır.
+    """
+    if df is None or df.empty or "_amount" not in df.columns:
+        return {
+            "sgk_turnover": 0.0,
+            "cash_turnover": 0.0,
+            "returned_turnover": 0.0,
+            "other_turnover": 0.0,
+            "turnover_breakdown_available": False,
+        }
+
+    if "_sales_type_norm" not in df.columns:
+        return {
+            "sgk_turnover": 0.0,
+            "cash_turnover": 0.0,
+            "returned_turnover": 0.0,
+            "other_turnover": round(float(df["_amount"].sum()), 2),
+            "turnover_breakdown_available": False,
+        }
+
+    sales_type = df["_sales_type_norm"].fillna("").astype(str)
+
+    sgk_mask = sales_type.str.contains("medula", regex=False)
+    cash_mask = sales_type.str.contains("nakit", regex=False)
+    returned_mask = sales_type.str.contains("iade", regex=False)
+
+    classified_mask = sgk_mask | cash_mask | returned_mask
+    other_mask = ~classified_mask
+
+    return {
+        "sgk_turnover": round(float(df.loc[sgk_mask, "_amount"].sum()), 2),
+        "cash_turnover": round(float(df.loc[cash_mask, "_amount"].sum()), 2),
+        "returned_turnover": round(
+            float(df.loc[returned_mask, "_amount"].sum()),
+            2,
+        ),
+        "other_turnover": round(float(df.loc[other_mask, "_amount"].sum()), 2),
+        "turnover_breakdown_available": True,
+    }
+
+
 def calculate_category_metrics(
     sales_df: pd.DataFrame,
     product_df: pd.DataFrame | None = None,
@@ -447,6 +492,49 @@ def _calculate_period_summary(
         else 0.0
     )
 
+    daily_revenue = []
+
+    if (
+        "_transaction_date" in filtered.columns
+        and filtered["_transaction_date"].notna().any()
+    ):
+        daily = filtered[
+            filtered["_transaction_date"].notna()
+        ].copy()
+
+        daily["_day"] = (
+            daily["_transaction_date"].dt.normalize()
+        )
+
+        daily_df = (
+            daily.groupby("_day", as_index=False)
+            .agg(
+                {
+                    "_amount": "sum",
+                    "_profit": "sum",
+                }
+            )
+            .sort_values("_day")
+        )
+
+        daily_revenue = [
+            {
+                "day": row["_day"].strftime("%Y-%m-%d"),
+                "label": row["_day"].strftime("%d.%m"),
+                "revenue": round(
+                    float(row["_amount"]),
+                    2,
+                ),
+                "profit": round(
+                    float(row["_profit"]),
+                    2,
+                ),
+            }
+            for _, row in daily_df.iterrows()
+        ]
+
+    turnover_breakdown = _calculate_turnover_breakdown(filtered)
+
     return {
         **metadata,
         "total_turnover": round(turnover, 2),
@@ -457,6 +545,8 @@ def _calculate_period_summary(
         "transaction_count_assumed": transaction_assumed,
         "average_sale": round(average_sale, 2),
         "row_count": int(len(filtered)),
+        "daily_revenue": daily_revenue,
+        **turnover_breakdown,
     }
 
 
@@ -541,6 +631,8 @@ def _calculate_date_range_summary(
             for _, row in daily_df.iterrows()
         ]
 
+    turnover_breakdown = _calculate_turnover_breakdown(working)
+
     return {
         "period": "week",
         "period_label": label,
@@ -561,6 +653,7 @@ def _calculate_date_range_summary(
         "average_sale": round(average_sale, 2),
         "row_count": int(len(working)),
         "daily_revenue": daily_revenue,
+        **turnover_breakdown,
     }
 
 
@@ -705,6 +798,31 @@ def calculate_finance_metrics(
         raw_df[amount_column]
     )
 
+    sales_type_column = find_first_column(
+        raw_df,
+        [
+            "Satış Tipi",
+            "Satis Tipi",
+            "Satış Türü",
+            "Satis Turu",
+            "İşlem Tipi",
+            "Islem Tipi",
+        ],
+    )
+
+    if sales_type_column is not None:
+        raw_df["_sales_type_norm"] = (
+            raw_df[sales_type_column]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.casefold()
+            .str.replace("ı", "i", regex=False)
+            .str.replace("i̇", "i", regex=False)
+        )
+    else:
+        raw_df["_sales_type_norm"] = ""
+
     if date_column is not None:
         raw_df["_transaction_date"] = parse_date_series(
             raw_df[date_column]
@@ -772,6 +890,7 @@ def calculate_finance_metrics(
     total_turnover = float(df["_amount"].sum())
     total_profit = float(df["_profit"].sum())
     total_cost = float(df["_cost"].sum())
+    turnover_breakdown = _calculate_turnover_breakdown(df)
 
     (
         transaction_count,
@@ -1057,6 +1176,12 @@ def calculate_finance_metrics(
             "kâr ve marj hesapları doğrulanamadı."
         )
 
+    if sales_type_column is None:
+        warnings.append(
+            "Satış Tipi kolonu bulunamadı; SGK/Nakit ciro kırılımı "
+            "oluşturulamadı."
+        )
+
     if date_column is None:
         warnings.append(
             "Satış tarihi kolonu bulunamadı; dönem filtresi "
@@ -1102,6 +1227,7 @@ def calculate_finance_metrics(
         "profit_column": profit_column,
         "cost_column": cost_column,
         "profit_source": profit_source,
+        "sales_type_column": sales_type_column,
         "period": period_metadata["period"],
         "period_label": period_metadata[
             "period_label"
@@ -1145,6 +1271,7 @@ def calculate_finance_metrics(
             profit_margin,
             2,
         ),
+        **turnover_breakdown,
         "daily_revenue": daily_revenue,
         "top_products": top_products,
         "category_metrics": category_metrics,
