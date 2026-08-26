@@ -250,6 +250,15 @@ type AnalyzeResult = {
   };
   finance_metrics?: {
     success?: boolean;
+    error?: string;
+    warnings?: string[];
+    duplicate_info?: {
+      duplicate_check_applied?: boolean;
+      duplicate_rows_detected?: number;
+      duplicate_rows_removed?: number;
+      duplicate_key_columns?: string[];
+      duplicate_check_reason?: string | null;
+    };
     total_turnover?: number;
     average_sale?: number;
     transaction_count?: number;
@@ -320,6 +329,13 @@ type AnalyzeResult = {
     lapsed_patients?: PatientMetric[];
     institutions?: InstitutionMetric[];
     prescriptions?: PrescriptionMetric[];
+    duplicate_info?: {
+      duplicate_check_applied?: boolean;
+      duplicate_rows_detected?: number;
+      duplicate_rows_removed?: number;
+      duplicate_key_columns?: string[];
+      duplicate_check_reason?: string | null;
+    };
   } | null;
 };
 
@@ -1033,6 +1049,11 @@ export default function DashboardPage() {
   const institutionCount = institutionMetrics.length;
 
   const financeMetrics = analyzeResult?.finance_metrics ?? null;
+  const financeAvailable = financeMetrics?.success !== false;
+  const financeErrorMessage =
+    financeMetrics?.error ??
+    financeMetrics?.warnings?.[0] ??
+    "Finans verisi hesaplanamadı.";
   const financeWeekMetrics = financeMetrics?.week_metrics ?? [];
 
   const selectedWeekMetric =
@@ -1595,11 +1616,27 @@ export default function DashboardPage() {
                   Toplam Ciro
                 </span>
                 <strong style={{ fontSize: 18, color: "#0f172a" }}>
-                  {totalTurnover.toLocaleString("tr-TR")} ₺
+                  {financeAvailable
+                    ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
+                    : "—"}
                 </strong>
               </div>
 
-              {turnoverBreakdownAvailable ? (
+              {!financeAvailable ? (
+                <p
+                  style={{
+                    margin: 0,
+                    padding: "14px 16px",
+                    borderRadius: 16,
+                    background: "#fff7ed",
+                    color: "#9a3412",
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  ⚠️ {financeErrorMessage}
+                </p>
+              ) : turnoverBreakdownAvailable ? (
                 <>
                   <div
                     style={{
@@ -2226,11 +2263,15 @@ export default function DashboardPage() {
                 <b>💵</b>
                 <span>Ciro</span>
                 <strong>
-                  {hasAnalysis
+                  {hasAnalysis && financeAvailable
                     ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
-                    : "-"}
+                    : "—"}
                 </strong>
-                <p>{financePeriodLabel} toplam satış</p>
+                <p>
+                  {hasAnalysis && !financeAvailable
+                    ? "Finans verisi hesaplanamadı"
+                    : `${financePeriodLabel} toplam satış`}
+                </p>
                 <em className="navigation-hint">Finansı aç →</em>
               </button>
 
@@ -2242,11 +2283,15 @@ export default function DashboardPage() {
                 <b>📈</b>
                 <span>Net Kâr</span>
                 <strong>
-                  {hasAnalysis
+                  {hasAnalysis && financeAvailable
                     ? `${totalProfit.toLocaleString("tr-TR")} ₺`
-                    : "-"}
+                    : "—"}
                 </strong>
-                <p>{financePeriodLabel} doğrulanmış kâr</p>
+                <p>
+                  {hasAnalysis && !financeAvailable
+                    ? "Finans verisi hesaplanamadı"
+                    : `${financePeriodLabel} doğrulanmış kâr`}
+                </p>
                 <em className="navigation-hint">Finansı aç →</em>
               </button>
 
@@ -2309,17 +2354,21 @@ export default function DashboardPage() {
                         color: "#172554",
                       }}
                     >
-                      {hasAnalysis ? `${totalTurnover.toLocaleString("tr-TR")} ₺` : "-"}
+                      {hasAnalysis && financeAvailable
+                        ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
+                        : "—"}
                     </strong>
                     <small style={{ color: "#94a3b8", fontWeight: 700 }}>
-                      Son 7 günlük görünüm
+                      {hasAnalysis && !financeAvailable
+                        ? "Finans verisi hesaplanamadı"
+                        : "Son 7 günlük görünüm"}
                     </small>
                   </div>
                   <span style={{ color: "#7c3aed", fontWeight: 900 }}>→</span>
                 </div>
 
                 <div style={{ width: "100%", height: 125, marginTop: 9 }}>
-                  {financeDailyRevenue.length ? (
+                  {financeAvailable && financeDailyRevenue.length ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={financeDailyRevenue}>
                         <defs>
@@ -2964,9 +3013,9 @@ export default function DashboardPage() {
               >
                 <span>💰 Toplam Ciro</span>
                 <strong>
-                  {analyzeResult?.finance_metrics?.success
+                  {financeAvailable && analyzeResult?.finance_metrics?.success
                     ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
-                    : "-"}
+                    : "—"}
                 </strong>
                 <p>Analiz dönemindeki toplam satış</p>
                 <small
@@ -4514,9 +4563,9 @@ export default function DashboardPage() {
               <div>
                 <span>💰 Toplam Ciro</span>
                 <strong>
-                  {totalTurnover
+                  {financeAvailable && totalTurnover
                     ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
-                    : "-"}
+                    : "—"}
                 </strong>
                 <small>{transactionCount} işlem</small>
               </div>
@@ -4687,19 +4736,19 @@ export default function DashboardPage() {
                     <div className="copilot-finance-list">
                       <div>
                         <span>Toplam ciro</span>
-                        <b>{totalTurnover.toLocaleString("tr-TR")} ₺</b>
+                        <b>{financeAvailable ? `${totalTurnover.toLocaleString("tr-TR")} ₺` : "—"}</b>
                       </div>
                       <div>
                         <span>Toplam kâr</span>
-                        <b>{totalProfit.toLocaleString("tr-TR")} ₺</b>
+                        <b>{financeAvailable ? `${totalProfit.toLocaleString("tr-TR")} ₺` : "—"}</b>
                       </div>
                       <div>
                         <span>Kâr marjı</span>
-                        <b>%{profitMargin.toLocaleString("tr-TR")}</b>
+                        <b>{financeAvailable ? `%${profitMargin.toLocaleString("tr-TR")}` : "—"}</b>
                       </div>
                       <div>
                         <span>Ortalama satış</span>
-                        <b>{averageSale.toLocaleString("tr-TR")} ₺</b>
+                        <b>{financeAvailable ? `${averageSale.toLocaleString("tr-TR")} ₺` : "—"}</b>
                       </div>
                     </div>
                   </div>

@@ -1,6 +1,7 @@
 import pandas as pd
 
 from app.services.data_quality import (
+    deduplicate_sales_rows,
     find_first_column,
     parse_date_series,
     to_number,
@@ -731,10 +732,15 @@ def calculate_finance_metrics(
             "daily_revenue": [],
             "top_products": [],
             "category_metrics": [],
-            "warnings": [],
+            "duplicate_info": duplicate_info,
+            "warnings": [
+                "Ciro hesaplamak için uygun tutar kolonu bulunamadı."
+            ],
         }
 
     raw_df = sales_df.copy()
+
+    raw_df, duplicate_info = deduplicate_sales_rows(raw_df)
 
     amount_column = find_first_column(
         raw_df,
@@ -1163,6 +1169,12 @@ def calculate_finance_metrics(
     )
 
     warnings = []
+
+    if duplicate_info.get("duplicate_rows_removed", 0) > 0:
+        warnings.append(
+            f"{duplicate_info['duplicate_rows_removed']} duplicate satış kaydı "
+            "hesaplamadan çıkarıldı."
+        )
 
     if transaction_assumed:
         warnings.append(

@@ -174,6 +174,116 @@ def estimate_period_days(
     return span, False
 
 
+SALES_ID_CANDIDATES = [
+    "Satış No",
+    "Satis No",
+    "Fiş/Reçete No",
+    "Fis Recete No",
+    "Fiş No",
+    "Fis No",
+    "Reçete No",
+    "Recete No",
+    "İşlem No",
+    "Islem No",
+    "Belge No",
+]
+
+SALES_SIGNATURE_CANDIDATES = [
+    "Satış Tipi",
+    "Satis Tipi",
+    "İşlem Tarihi",
+    "Islem Tarihi",
+    "Satış Tarihi",
+    "Satis Tarihi",
+    "Tarih",
+    "Toplam Tutar",
+    "Ödenen Tutar",
+    "Odenen Tutar",
+    "Net Tutar",
+    "Satış Tutarı",
+    "Satis Tutari",
+    "Tutar",
+    "Hasta",
+    "Hasta Adı",
+    "Hasta Adi",
+    "Müşteri",
+    "Musteri",
+    "Ürün Adı",
+    "Urun Adi",
+    "Ürün",
+    "Urun",
+    "Adet",
+    "Miktar",
+]
+
+
+def deduplicate_sales_rows(
+    df: pd.DataFrame | None,
+) -> tuple[pd.DataFrame, dict]:
+    """
+    Satış kayıtlarını temkinli biçimde duplicate kontrolünden geçirir.
+
+    Güvenlik ilkesi:
+    - En az bir işlem/satış kimliği kolonu varsa, kimlik + mevcut iş alanlarıyla
+      bileşik imza oluşturulur ve yalnızca tam aynı işlem satırları düşürülür.
+    - Kimlik kolonu yoksa otomatik kayıt silinmez. Yalnızca exact duplicate
+      sayısı raporlanır.
+    """
+    if df is None:
+        return pd.DataFrame(), {
+            "duplicate_check_applied": False,
+            "duplicate_rows_detected": 0,
+            "duplicate_rows_removed": 0,
+            "duplicate_key_columns": [],
+            "duplicate_check_reason": "dataframe_missing",
+        }
+
+    if df.empty:
+        return df.copy(), {
+            "duplicate_check_applied": True,
+            "duplicate_rows_detected": 0,
+            "duplicate_rows_removed": 0,
+            "duplicate_key_columns": [],
+            "duplicate_check_reason": None,
+        }
+
+    id_column = find_first_column(df, SALES_ID_CANDIDATES)
+
+    if id_column is None:
+        exact_duplicate_count = int(df.duplicated(keep="first").sum())
+        return df.copy(), {
+            "duplicate_check_applied": False,
+            "duplicate_rows_detected": exact_duplicate_count,
+            "duplicate_rows_removed": 0,
+            "duplicate_key_columns": [],
+            "duplicate_check_reason": "transaction_id_missing",
+        }
+
+    key_columns = [id_column]
+
+    for candidate in SALES_SIGNATURE_CANDIDATES:
+        column = find_first_column(df, [candidate])
+        if column is not None and column not in key_columns:
+            key_columns.append(column)
+
+    duplicate_mask = df.duplicated(
+        subset=key_columns,
+        keep="first",
+    )
+
+    duplicate_count = int(duplicate_mask.sum())
+
+    cleaned = df.loc[~duplicate_mask].copy()
+
+    return cleaned, {
+        "duplicate_check_applied": True,
+        "duplicate_rows_detected": duplicate_count,
+        "duplicate_rows_removed": duplicate_count,
+        "duplicate_key_columns": key_columns,
+        "duplicate_check_reason": None,
+    }
+
+
 def dataframe_quality_summary(
     df: pd.DataFrame | None,
 ) -> dict:

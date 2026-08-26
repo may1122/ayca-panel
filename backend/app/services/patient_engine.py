@@ -7,6 +7,8 @@ from typing import Any
 
 import pandas as pd
 
+from app.services.data_quality import deduplicate_sales_rows
+
 
 def normalize_text(value: Any) -> str:
     if value is None:
@@ -359,7 +361,8 @@ def calculate_patient_metrics(
             message="Satış dosyasında analiz edilebilir kayıt bulunamadı."
         )
 
-    sales = normalize_columns(sales_df)
+    cleaned_sales_df, duplicate_info = deduplicate_sales_rows(sales_df)
+    sales = normalize_columns(cleaned_sales_df)
     products = (
         normalize_columns(product_df)
         if product_df is not None and not product_df.empty
@@ -570,6 +573,7 @@ def calculate_patient_metrics(
         "prescriptions": prescriptions,
         "detected_columns": detected_columns,
         "missing_columns": missing_columns,
+        "duplicate_info": duplicate_info,
         "message": (
             "Hasta ve reçete analizi tamamlandı."
             if available_sections
