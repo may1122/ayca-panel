@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -399,6 +399,103 @@ export default function DashboardPage() {
   ]);
   const [isCopilotThinking, setIsCopilotThinking] = useState(false);
   const [isAssistantDrawerOpen, setIsAssistantDrawerOpen] = useState(false);
+  const [assistantOrbPosition, setAssistantOrbPosition] = useState({ x: 0, y: 0 });
+  const assistantOrbDragRef = useRef({
+    dragging: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
+
+  const handleAssistantOrbPointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (event.button !== 0) return;
+
+    assistantOrbDragRef.current = {
+      dragging: true,
+      moved: false,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: assistantOrbPosition.x,
+      originY: assistantOrbPosition.y,
+    };
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleAssistantOrbPointerMove = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const drag = assistantOrbDragRef.current;
+    if (!drag.dragging) return;
+
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      drag.moved = true;
+    }
+
+    const maxX = Math.max(80, Math.min(window.innerWidth * 0.32, 360));
+    const maxY = Math.max(70, Math.min(window.innerHeight * 0.22, 190));
+
+    setAssistantOrbPosition({
+      x: Math.max(-maxX, Math.min(maxX, drag.originX + dx)),
+      y: Math.max(-maxY, Math.min(maxY, drag.originY + dy)),
+    });
+  };
+
+  const handleAssistantOrbPointerUp = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    const drag = assistantOrbDragRef.current;
+    drag.dragging = false;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  useEffect(() => {
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      const drag = assistantOrbDragRef.current;
+      if (!drag.dragging) return;
+
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        drag.moved = true;
+      }
+
+      const maxX = Math.max(120, Math.min(window.innerWidth * 0.42, 520));
+      const maxY = Math.max(100, Math.min(window.innerHeight * 0.32, 280));
+
+      setAssistantOrbPosition({
+        x: Math.max(-maxX, Math.min(maxX, drag.originX + dx)),
+        y: Math.max(-maxY, Math.min(maxY, drag.originY + dy)),
+      });
+    };
+
+    const handleWindowPointerUp = () => {
+      assistantOrbDragRef.current.dragging = false;
+    };
+
+    window.addEventListener("pointermove", handleWindowPointerMove);
+    window.addEventListener("pointerup", handleWindowPointerUp);
+    window.addEventListener("pointercancel", handleWindowPointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handleWindowPointerMove);
+      window.removeEventListener("pointerup", handleWindowPointerUp);
+      window.removeEventListener("pointercancel", handleWindowPointerUp);
+    };
+  }, []);
+
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTurnoverDetailOpen, setIsTurnoverDetailOpen] = useState(false);
 
@@ -2020,17 +2117,52 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 14,
-              flex: "0 0 auto",
-              position: "relative",
-              zIndex: 1,
-            }}
-          >
-            <div style={{ display: "grid", gap: 7 }}>
+          <div className="ayca-header-v3-stack">
+            <button
+              type="button"
+              onClick={() => {
+                if (assistantOrbDragRef.current.moved) {
+                  assistantOrbDragRef.current.moved = false;
+                  return;
+                }
+                setIsAssistantDrawerOpen(true);
+              }}
+              onPointerDown={handleAssistantOrbPointerDown}
+              onPointerUp={handleAssistantOrbPointerUp}
+              onPointerCancel={handleAssistantOrbPointerUp}
+              style={{
+                transform: `translate3d(${assistantOrbPosition.x}px, ${assistantOrbPosition.y}px, 0)`,
+                touchAction: "none",
+              }}
+              aria-label="AYÇA Asistanı aç veya taşı"
+              title="AYÇA Asistan"
+              className={`ayca-header-orb-button ${isCopilotThinking ? "is-thinking" : totalRiskItems > 0 ? "has-alert" : "is-ready"}`}
+            >
+              <span className="ayca-header-orbit" aria-hidden="true" />
+              <span className="ayca-orb-v3 ayca-orb-v3-header" aria-hidden="true">
+                <span className="ayca-orb-v3-orbit ayca-orb-v3-orbit-a" />
+                <span className="ayca-orb-v3-orbit ayca-orb-v3-orbit-b" />
+                <span className="ayca-orb-v3-logo">
+                  <span className="ayca-orb-v3-word" aria-label="AYÇA">
+                    <span className="ayca-letter ayca-letter-navy">A</span>
+                    <span className="ayca-letter ayca-letter-green">Y</span>
+                    <span className="ayca-letter ayca-letter-navy">Ç</span>
+                    <span className="ayca-letter ayca-letter-navy">A</span>
+                  </span>
+                  <small>ASİSTAN</small>
+                </span>
+                <span className="ayca-orb-v3-particle ayca-orb-v3-p1" />
+                <span className="ayca-orb-v3-particle ayca-orb-v3-p2" />
+              </span>
+              <span className="ayca-header-spark ayca-header-spark-one" aria-hidden="true" />
+              <span className="ayca-header-spark ayca-header-spark-two" aria-hidden="true" />
+              <span
+                aria-hidden="true"
+                className={hasAnalysis ? "ayca-orb-online-dot" : "ayca-orb-offline-dot"}
+              />
+            </button>
+            <div className="ayca-header-v3-period">
+              <div style={{ display: "grid", gap: 7, width: "100%" }}>
               <select
                 value={financePeriod}
                 onChange={(event) => {
@@ -2100,21 +2232,8 @@ export default function DashboardPage() {
                   </button>
                 </div>
               )}
+              </div>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setIsAssistantDrawerOpen(true)}
-              aria-label="AYÇA Orb Asistanı aç"
-              title="AYÇA Asistan"
-              className={`ayca-header-orb-button ${isCopilotThinking ? "is-thinking" : totalRiskItems > 0 ? "has-alert" : "is-ready"}`}
-            >
-              <span className="ayca-header-orb-core">AY</span>
-              <span
-                aria-hidden="true"
-                className={hasAnalysis ? "ayca-orb-online-dot" : "ayca-orb-offline-dot"}
-              />
-            </button>
           </div>
         </header>
 
@@ -5056,8 +5175,8 @@ export default function DashboardPage() {
               borderRadius: 24,
               color: "#18324a",
               background:
-                "radial-gradient(circle at 50% 20%, rgba(125,211,252,.22), transparent 28%), linear-gradient(180deg, #f8fffd 0%, #eefaf7 48%, #eef7ff 100%)",
-              border: "1px solid rgba(45,212,191,.34)",
+                "radial-gradient(circle at 50% 18%, rgba(45,212,191,.18), transparent 28%), linear-gradient(180deg, #fbfffe 0%, #f0fbf8 48%, #eef9fb 100%)",
+              border: "1px solid rgba(16,185,129,.26)",
               boxShadow:
                 "-22px 0 60px rgba(15,23,42,.14), 0 0 0 1px rgba(255,255,255,.72), 0 0 34px rgba(56,189,248,.10)",
             }}
@@ -5072,8 +5191,20 @@ export default function DashboardPage() {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                <div className="ayca-orb-mini">
-                  <span>AY</span>
+                <div className={`ayca-orb-v3 ayca-orb-v3-mini ${isCopilotThinking ? "is-thinking" : totalRiskItems > 0 ? "has-alert" : "is-ready"}`} aria-hidden="true">
+                  <span className="ayca-orb-v3-orbit ayca-orb-v3-orbit-a" />
+                  <span className="ayca-orb-v3-orbit ayca-orb-v3-orbit-b" />
+                  <span className="ayca-orb-v3-logo">
+                  <span className="ayca-orb-v3-word" aria-label="AYÇA">
+                    <span className="ayca-letter ayca-letter-navy">A</span>
+                    <span className="ayca-letter ayca-letter-green">Y</span>
+                    <span className="ayca-letter ayca-letter-navy">Ç</span>
+                    <span className="ayca-letter ayca-letter-navy">A</span>
+                  </span>
+                  <small>ASİSTAN</small>
+                </span>
+                  <span className="ayca-orb-v3-particle ayca-orb-v3-p1" />
+                  <span className="ayca-orb-v3-particle ayca-orb-v3-p2" />
                 </div>
                 <div>
                   <strong style={{ display: "block", fontSize: 15, color: "#12314a" }}>
@@ -5182,18 +5313,39 @@ export default function DashboardPage() {
                 textAlign: "center",
               }}
             >
-              <div className={`ayca-orb-stage ${isCopilotThinking ? "is-thinking" : totalRiskItems > 0 ? "has-alert" : "is-ready"}`} aria-hidden="true">
-                <div className="ayca-orb-ring ayca-orb-ring-one" />
-                <div className="ayca-orb-ring ayca-orb-ring-two" />
-                <div className="ayca-orb-core">
-                  <span>AY</span>
-                </div>
+              <div className={`ayca-orb-v3 ayca-orb-v3-stage ${isCopilotThinking ? "is-thinking" : totalRiskItems > 0 ? "has-alert" : "is-ready"}`} aria-hidden="true">
+                <span className="ayca-orb-v3-orbit ayca-orb-v3-orbit-a" />
+                <span className="ayca-orb-v3-orbit ayca-orb-v3-orbit-b" />
+                <span className="ayca-orb-v3-logo">
+                  <span className="ayca-orb-v3-word" aria-label="AYÇA">
+                    <span className="ayca-letter ayca-letter-navy">A</span>
+                    <span className="ayca-letter ayca-letter-green">Y</span>
+                    <span className="ayca-letter ayca-letter-navy">Ç</span>
+                    <span className="ayca-letter ayca-letter-navy">A</span>
+                  </span>
+                  <small>ASİSTAN</small>
+                </span>
+                <span className="ayca-orb-v3-particle ayca-orb-v3-p1" />
+                <span className="ayca-orb-v3-particle ayca-orb-v3-p2" />
+                <span className="ayca-orb-v3-particle ayca-orb-v3-p3" />
+              </div>
+              <div className={`ayca-orb-v3-status-text ${isCopilotThinking ? "is-thinking" : totalRiskItems > 0 ? "has-alert" : "is-ready"}`}>
+                <span className="ayca-status-dot" />
+                <strong>
+                  {isCopilotThinking
+                    ? "Düşünüyor"
+                    : totalRiskItems > 0
+                      ? "Hazır · İçgörü var"
+                      : hasAnalysis
+                        ? "Hazır bekliyor"
+                        : "Analiz bekleniyor"}
+                </strong>
               </div>
 
               <h3
                 style={{
                   margin: "8px 0 3px",
-                  color: "#fff",
+                  color: "#17233b",
                   fontSize: 18,
                 }}
               >
@@ -5202,7 +5354,7 @@ export default function DashboardPage() {
               <p
                 style={{
                   margin: 0,
-                  color: "#94a3b8",
+                  color: "#64748b",
                   fontSize: 12,
                   lineHeight: 1.5,
                 }}
@@ -5239,9 +5391,10 @@ export default function DashboardPage() {
                     gap: 10,
                     padding: "10px 11px",
                     borderRadius: 13,
-                    border: "1px solid rgba(99,102,241,.12)",
-                    background: "rgba(30,41,59,.62)",
-                    color: "#e2e8f0",
+                    border: "1px solid rgba(99,102,241,.13)",
+                    background: "rgba(255,255,255,.76)",
+                    color: "#263650",
+                    boxShadow: "0 8px 20px rgba(99,102,241,.05)",
                     textAlign: "left",
                     cursor: isCopilotThinking ? "wait" : "pointer",
                     opacity: isCopilotThinking ? 0.6 : 1,
@@ -5254,7 +5407,7 @@ export default function DashboardPage() {
                       borderRadius: 9,
                       display: "grid",
                       placeItems: "center",
-                      background: "rgba(124,58,237,.13)",
+                      background: "linear-gradient(135deg, rgba(124,58,237,.12), rgba(37,99,235,.10))",
                     }}
                   >
                     {icon}
@@ -5398,126 +5551,137 @@ export default function DashboardPage() {
       <style>{`
         .ayca-header-orb-button {
           position: relative;
-          width: 104px;
-          height: 104px;
+          width: 116px;
+          height: 58px;
           border: 0;
-          border-radius: 50%;
+          border-radius: 18px;
           display: grid;
           place-items: center;
           cursor: pointer;
-          background: transparent;
+          background: rgba(255,255,255,.56);
+          box-shadow: 0 10px 30px rgba(79,70,229,.07);
           isolation: isolate;
+          transition: transform .22s ease, box-shadow .22s ease, background .22s ease;
         }
 
-        .ayca-header-orb-button::after {
+        .ayca-header-orb-button:hover {
+          transform: translateY(-1px);
+          background: rgba(255,255,255,.86);
+          box-shadow: 0 14px 34px rgba(79,70,229,.12);
+        }
+
+        .ayca-header-orbit {
+          position: absolute;
+          z-index: 1;
+          width: 98px;
+          height: 25px;
+          border-radius: 50%;
+          border: 1.5px solid rgba(59,130,246,.48);
+          transform: rotate(-13deg);
+          box-shadow: 0 0 16px rgba(99,102,241,.14);
+          pointer-events: none;
+        }
+
+        .ayca-header-orbit::after {
           content: "";
           position: absolute;
-          width: 88px;
-          height: 34px;
+          width: 6px;
+          height: 6px;
+          right: 12px;
+          top: -3px;
           border-radius: 50%;
-          border: 1px solid rgba(96,165,250,.42);
-          transform: rotate(-18deg);
-          box-shadow: 0 0 15px rgba(59,130,246,.16);
-          z-index: 1;
-          pointer-events: none;
+          background: #60a5fa;
+          box-shadow: 0 0 10px rgba(96,165,250,.75);
         }
 
         .ayca-header-orb-core {
           position: relative;
           z-index: 3;
-          width: 78px;
-          height: 78px;
-          border-radius: 50%;
-          display: grid;
-          place-items: center;
-          color: #ffffff;
+          display: inline-block;
+          padding: 2px 6px;
+          color: transparent;
           font-size: 22px;
           line-height: 1;
-          letter-spacing: -.11em;
-          padding-right: 3px;
+          letter-spacing: -.075em;
           font-weight: 950;
-          background:
-            radial-gradient(circle at 31% 23%, rgba(255,255,255,.94), transparent 9%),
-            linear-gradient(135deg, #7c3aed 0%, #4f46e5 27%, #3b82f6 60%, #14b8a6 100%);
-          border: 2px solid rgba(153,246,228,.88);
-          box-shadow:
-            0 0 0 7px rgba(59,130,246,.055),
-            0 0 18px rgba(20,184,166,.46),
-            0 0 36px rgba(59,130,246,.42),
-            0 0 52px rgba(124,58,237,.28),
-            inset 0 0 24px rgba(255,255,255,.22);
-          animation: aycaHeaderOrbPulse 3.1s ease-in-out infinite;
+          background: linear-gradient(100deg, #8b5cf6 0%, #6366f1 42%, #2563eb 72%, #06b6d4 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          filter: drop-shadow(0 4px 10px rgba(99,102,241,.16));
         }
 
-        .ayca-header-orb-core::before {
-          content: "✦";
+        .ayca-header-spark {
           position: absolute;
-          top: 11px;
-          right: 12px;
-          font-size: 9px;
-          color: rgba(255,255,255,.95);
-          text-shadow: 0 0 8px rgba(255,255,255,.75);
-        }
-
-        .ayca-header-orb-core::after {
-          content: "";
-          position: absolute;
-          inset: 8px;
+          z-index: 4;
+          width: 5px;
+          height: 5px;
           border-radius: 50%;
-          border-top: 1px solid rgba(255,255,255,.34);
-          border-left: 1px solid rgba(255,255,255,.12);
+          background: #7c3aed;
+          box-shadow: 0 0 9px rgba(124,58,237,.55);
           pointer-events: none;
         }
+
+        .ayca-header-spark-one { left: 14px; top: 15px; }
+        .ayca-header-spark-two { right: 17px; bottom: 14px; background: #38bdf8; }
 
         .ayca-orb-online-dot,
         .ayca-orb-offline-dot {
           position: absolute;
+          z-index: 5;
           right: 7px;
-          bottom: 12px;
-          width: 14px;
-          height: 14px;
+          bottom: 7px;
+          width: 10px;
+          height: 10px;
           border-radius: 50%;
-          border: 2px solid #f8fffd;
+          border: 2px solid #ffffff;
         }
 
         .ayca-orb-online-dot {
           background: #10b981;
-          box-shadow: 0 0 10px rgba(16,185,129,.65);
+          box-shadow: 0 0 9px rgba(16,185,129,.50);
         }
 
-        .ayca-orb-offline-dot {
-          background: #94a3b8;
-        }
-
-        @keyframes aycaHeaderOrbPulse {
-          0%, 100% { transform: scale(1); filter: brightness(1); }
-          50% { transform: scale(1.045); filter: brightness(1.10); }
-        }
+        .ayca-orb-offline-dot { background: #94a3b8; }
 
         .ayca-orb-mini {
-          width: 42px;
-          height: 42px;
-          border-radius: 50%;
+          position: relative;
+          width: 64px;
+          height: 40px;
           display: grid;
           place-items: center;
-          color: #fff;
-          font-size: 11px;
-          letter-spacing: -.08em;
+          border-radius: 13px;
+          background: linear-gradient(135deg, rgba(139,92,246,.09), rgba(37,99,235,.08));
+          border: 1px solid rgba(99,102,241,.15);
+          box-shadow: 0 8px 20px rgba(99,102,241,.08);
+          overflow: visible;
+        }
+
+        .ayca-orb-mini::after {
+          content: "";
+          position: absolute;
+          width: 54px;
+          height: 16px;
+          border-radius: 50%;
+          border: 1px solid rgba(59,130,246,.32);
+          transform: rotate(-14deg);
+        }
+
+        .ayca-orb-mini span {
+          position: relative;
+          z-index: 2;
+          color: transparent;
+          font-size: 14px;
+          letter-spacing: -.07em;
           font-weight: 950;
-          background:
-            radial-gradient(circle at 30% 22%, rgba(255,255,255,.88), transparent 10%),
-            linear-gradient(135deg, #7c3aed 0%, #3b82f6 52%, #14b8a6 100%);
-          border: 1px solid rgba(129,140,248,.58);
-          box-shadow:
-            0 0 16px rgba(59,130,246,.40),
-            0 0 28px rgba(124,58,237,.26),
-            inset 0 0 14px rgba(56,189,248,.20);
+          background: linear-gradient(100deg, #8b5cf6, #4f46e5 48%, #2563eb 76%, #06b6d4);
+          -webkit-background-clip: text;
+          background-clip: text;
         }
 
         .ayca-orb-stage {
           position: relative;
-          width: 150px;
-          height: 150px;
+          width: 178px;
+          height: 116px;
           margin: 0 auto;
           display: grid;
           place-items: center;
@@ -5526,70 +5690,90 @@ export default function DashboardPage() {
         .ayca-orb-core {
           position: relative;
           z-index: 3;
-          width: 94px;
-          height: 94px;
-          border-radius: 50%;
           display: grid;
           place-items: center;
-          color: #ffffff;
-          font-size: 25px;
-          letter-spacing: -.09em;
+          padding: 10px 18px 12px;
+          border-radius: 24px;
+          background: linear-gradient(135deg, rgba(255,255,255,.90), rgba(248,250,255,.72));
+          border: 1px solid rgba(99,102,241,.10);
+          box-shadow: 0 16px 40px rgba(79,70,229,.10), inset 0 1px 0 rgba(255,255,255,.88);
+          animation: aycaWordmarkPulse 3.4s ease-in-out infinite;
+        }
+
+        .ayca-orb-core span {
+          color: transparent;
+          font-size: 33px;
+          line-height: 1;
+          letter-spacing: -.085em;
           font-weight: 950;
-          background:
-            radial-gradient(circle at 30% 22%, rgba(255,255,255,.92), transparent 8%),
-            linear-gradient(135deg, #7c3aed 0%, #3b82f6 50%, #14b8a6 100%);
-          border: 1px solid rgba(103,232,249,.82);
-          box-shadow:
-            0 0 14px rgba(20,184,166,.46),
-            0 0 34px rgba(59,130,246,.46),
-            0 0 54px rgba(124,58,237,.30),
-            inset 0 0 22px rgba(255,255,255,.20);
-          animation: aycaOrbPulse 3.2s ease-in-out infinite;
+          background: linear-gradient(100deg, #8b5cf6 0%, #6366f1 40%, #2563eb 72%, #06b6d4 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+          filter: drop-shadow(0 6px 14px rgba(99,102,241,.15));
         }
 
         .ayca-orb-ring {
           position: absolute;
-          inset: 22px;
+          z-index: 2;
+          left: 15px;
+          right: 15px;
+          height: 35px;
           border-radius: 50%;
-          border: 1px solid rgba(96,165,250,.52);
-          box-shadow: 0 0 14px rgba(59,130,246,.22);
+          border: 1.5px solid rgba(59,130,246,.38);
+          box-shadow: 0 0 18px rgba(99,102,241,.10);
         }
 
         .ayca-orb-ring-one {
-          transform: rotate(18deg) scaleX(1.30) scaleY(.48);
-          animation: aycaOrbOrbitOne 7s linear infinite;
+          transform: rotate(-12deg);
+          animation: aycaWordmarkOrbitOne 7s linear infinite;
         }
 
         .ayca-orb-ring-two {
-          transform: rotate(-28deg) scaleX(1.22) scaleY(.55);
-          border-color: rgba(168,85,247,.52);
-          animation: aycaOrbOrbitTwo 9s linear infinite;
+          left: 31px;
+          right: 31px;
+          height: 54px;
+          border-color: rgba(139,92,246,.22);
+          transform: rotate(28deg);
+          animation: aycaWordmarkOrbitTwo 9s linear infinite;
         }
 
-        @keyframes aycaOrbPulse {
-          0%, 100% { transform: scale(1); filter: brightness(1); }
-          50% { transform: scale(1.045); filter: brightness(1.12); }
+        .ayca-orb-particle {
+          position: absolute;
+          z-index: 4;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #7c3aed;
+          box-shadow: 0 0 11px rgba(124,58,237,.56);
         }
 
-        @keyframes aycaOrbOrbitOne {
-          from { transform: rotate(18deg) scaleX(1.30) scaleY(.48); }
-          to { transform: rotate(378deg) scaleX(1.30) scaleY(.48); }
+        .ayca-orb-particle-one { left: 18px; top: 29px; }
+        .ayca-orb-particle-two { right: 17px; bottom: 25px; background: #38bdf8; }
+
+        @keyframes aycaWordmarkPulse {
+          0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
+          50% { transform: translateY(-2px) scale(1.018); filter: brightness(1.05); }
         }
 
-        @keyframes aycaOrbOrbitTwo {
-          from { transform: rotate(-28deg) scaleX(1.22) scaleY(.55); }
-          to { transform: rotate(-388deg) scaleX(1.22) scaleY(.55); }
+        @keyframes aycaWordmarkOrbitOne {
+          from { transform: rotate(-12deg); }
+          to { transform: rotate(348deg); }
+        }
+
+        @keyframes aycaWordmarkOrbitTwo {
+          from { transform: rotate(28deg); }
+          to { transform: rotate(-332deg); }
+        }
+
+        .ayca-header-orb-button.is-thinking .ayca-header-orbit,
+        .ayca-orb-stage.is-thinking .ayca-orb-ring-one {
+          animation-duration: 2.2s;
+          border-color: rgba(124,58,237,.64);
+          box-shadow: 0 0 22px rgba(124,58,237,.18);
         }
 
         .ayca-header-orb-button.is-thinking .ayca-header-orb-core,
         .ayca-orb-stage.is-thinking .ayca-orb-core {
-          background:
-            radial-gradient(circle at 30% 22%, rgba(255,255,255,.92), transparent 8%),
-            linear-gradient(135deg, #9333ea 0%, #7c3aed 50%, #4f46e5 100%);
-          box-shadow:
-            0 0 18px rgba(168,85,247,.60),
-            0 0 40px rgba(124,58,237,.42),
-            inset 0 0 20px rgba(255,255,255,.20);
           animation: aycaThinkingPulse 1.05s ease-in-out infinite;
         }
 
@@ -5598,28 +5782,27 @@ export default function DashboardPage() {
           content: "";
           position: absolute;
           inset: 3px;
-          border-radius: 50%;
-          border: 2px solid rgba(245,158,11,.68);
-          box-shadow: 0 0 18px rgba(245,158,11,.30);
+          border-radius: 20px;
+          border: 1.5px solid rgba(245,158,11,.42);
+          box-shadow: 0 0 18px rgba(245,158,11,.16);
           pointer-events: none;
           animation: aycaAlertRing 2.4s ease-in-out infinite;
         }
 
         .ayca-header-orb-button.is-ready .ayca-header-orb-core,
         .ayca-orb-stage.is-ready .ayca-orb-core {
-          filter: saturate(1.08) brightness(1.04);
+          filter: saturate(1.05) brightness(1.02);
         }
 
         @keyframes aycaThinkingPulse {
           0%, 100% { transform: scale(1); filter: brightness(1); }
-          50% { transform: scale(1.08); filter: brightness(1.18); }
+          50% { transform: scale(1.045); filter: brightness(1.10); }
         }
 
         @keyframes aycaAlertRing {
-          0%, 100% { opacity: .42; transform: scale(.96); }
-          50% { opacity: 1; transform: scale(1.04); }
+          0%, 100% { opacity: .35; transform: scale(.98); }
+          50% { opacity: 1; transform: scale(1.02); }
         }
-
 
         .mobile-menu-button,
         .mobile-sidebar-backdrop {
@@ -5805,7 +5988,7 @@ export default function DashboardPage() {
           .copilot-tabs button,
           .copilot-quick-questions button {
             flex: 0 0 auto !important;
-            min-height: 44px;
+            min-height: 58px;
           }
 
           .insight-card {
@@ -5899,7 +6082,1186 @@ export default function DashboardPage() {
             grid-template-columns: 1fr !important;
           }
         }
-      `}</style>
+        /* AYÇA Assistant V1.1 — larger, rounder identity + subtitle */
+        .ayca-header-orb-button {
+          min-width: 168px !important;
+          height: 64px !important;
+          padding: 7px 16px !important;
+          border-radius: 32px !important;
+          transform: none !important;
+        }
+
+        .ayca-v1-brand,
+        .ayca-v1-brand-mini {
+          border-radius: 999px !important;
+          transform: none !important;
+        }
+
+        .ayca-v1-word-wrap {
+          position: relative;
+          z-index: 2;
+          display: inline-flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          line-height: 1;
+          gap: 2px;
+        }
+
+        .ayca-v1-word-wrap small {
+          font-size: 7px;
+          line-height: 1;
+          letter-spacing: .18em;
+          font-weight: 850;
+          color: #7c3aed;
+          opacity: .72;
+        }
+
+        .ayca-header-orb-button .ayca-v1-word {
+          font-size: 24px !important;
+          letter-spacing: -.04em;
+        }
+
+        .ayca-header-orb-button .ayca-v1-orbit {
+          inset: 7px 12px !important;
+          border-radius: 999px !important;
+        }
+
+        /* Put the time filter below the larger AYÇA identity on wide screens. */
+        @media (min-width: 900px) {
+          .header-actions,
+          .topbar-actions,
+          .dashboard-header-actions {
+            align-items: flex-end;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .ayca-header-orb-button {
+            min-width: 142px !important;
+            height: 56px !important;
+          }
+        }
+
+
+        /* AYÇA ORB V2 — reference-driven circular visual identity */
+        .ayca-header-orb-button {
+          width: 96px !important;
+          min-width: 96px !important;
+          height: 96px !important;
+          padding: 0 !important;
+          border: 0 !important;
+          border-radius: 50% !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          overflow: visible !important;
+          transform: none !important;
+        }
+
+        .ayca-header-orbit,
+        .ayca-header-spark {
+          display: none !important;
+        }
+
+        .ayca-orb-v2 {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 82px;
+          height: 82px;
+          border-radius: 50%;
+          isolation: isolate;
+          background:
+            radial-gradient(circle at 50% 45%, rgba(31,20,78,.96) 0 43%, rgba(50,21,116,.94) 56%, rgba(111,28,229,.92) 69%, rgba(49,205,255,.82) 82%, rgba(255,255,255,.96) 86%, transparent 89%),
+            conic-gradient(from 210deg, #5ee7ff, #6d28d9, #d946ef, #7c3aed, #22d3ee, #5ee7ff);
+          box-shadow:
+            0 0 0 1px rgba(139,92,246,.20),
+            0 0 12px rgba(124,58,237,.40),
+            0 0 28px rgba(109,40,217,.30),
+            0 0 40px rgba(34,211,238,.16),
+            inset 0 0 20px rgba(255,255,255,.08);
+          transition: transform .22s ease, filter .22s ease, box-shadow .22s ease;
+        }
+
+        .ayca-orb-v2::before {
+          content: "";
+          position: absolute;
+          inset: 7px;
+          border-radius: 50%;
+          border: 1px solid rgba(255,255,255,.18);
+          background:
+            radial-gradient(circle at 30% 25%, rgba(255,255,255,.13), transparent 18%),
+            radial-gradient(circle at 70% 78%, rgba(56,189,248,.10), transparent 24%),
+            rgba(9,8,34,.30);
+          z-index: -1;
+        }
+
+        .ayca-orb-v2::after {
+          content: "";
+          position: absolute;
+          inset: -5px;
+          border-radius: 50%;
+          border: 1px solid rgba(139,92,246,.26);
+          box-shadow: inset 0 0 12px rgba(168,85,247,.20);
+          transform: rotate(-18deg);
+        }
+
+        .ayca-orb-v2-word {
+          position: relative;
+          z-index: 4;
+          color: #fff;
+          font-family: Inter, "Segoe UI", Arial, sans-serif;
+          font-size: 19px;
+          line-height: 1;
+          font-weight: 850;
+          letter-spacing: -.055em;
+          text-shadow: 0 0 12px rgba(255,255,255,.28);
+        }
+
+        .ayca-orb-v2-ring {
+          position: absolute;
+          z-index: 2;
+          border-radius: 50%;
+          pointer-events: none;
+        }
+
+        .ayca-orb-v2-ring-one {
+          width: 70px;
+          height: 31px;
+          border: 1px solid rgba(213,180,255,.48);
+          transform: rotate(-22deg);
+        }
+
+        .ayca-orb-v2-ring-two {
+          width: 61px;
+          height: 55px;
+          border: 1px solid rgba(62,220,255,.22);
+          transform: rotate(38deg);
+        }
+
+        .ayca-orb-v2-glow {
+          position: absolute;
+          width: 7px;
+          height: 7px;
+          right: 8px;
+          top: 18px;
+          border-radius: 50%;
+          background: #d8b4fe;
+          box-shadow:
+            -50px 30px 0 -2px rgba(56,189,248,.9),
+            -17px -11px 0 -2px rgba(255,255,255,.85),
+            0 0 9px #c084fc;
+          z-index: 5;
+        }
+
+        .ayca-header-orb-button:hover .ayca-orb-v2 {
+          transform: translateY(-2px) scale(1.045);
+          filter: saturate(1.08);
+          box-shadow:
+            0 0 0 1px rgba(139,92,246,.26),
+            0 0 18px rgba(124,58,237,.55),
+            0 0 34px rgba(109,40,217,.38),
+            0 0 48px rgba(34,211,238,.22);
+        }
+
+        .ayca-header-orb-button.is-thinking .ayca-orb-v2-ring-one {
+          animation: aycaOrbSpin 2.2s linear infinite;
+        }
+
+        .ayca-header-orb-button.is-thinking .ayca-orb-v2 {
+          animation: aycaOrbPulse 1.7s ease-in-out infinite;
+        }
+
+        .ayca-header-orb-button.has-alert::after {
+          content: "1";
+          position: absolute;
+          top: 1px;
+          right: 0;
+          z-index: 20;
+          display: grid;
+          place-items: center;
+          width: 19px;
+          height: 19px;
+          border-radius: 50%;
+          background: #ef4444;
+          color: #fff;
+          border: 2px solid #fff;
+          font-size: 9px;
+          font-weight: 900;
+          box-shadow: 0 4px 12px rgba(239,68,68,.30);
+        }
+
+        .ayca-orb-v2-mini {
+          width: 54px;
+          height: 54px;
+        }
+
+        .ayca-orb-v2-mini .ayca-orb-v2-word {
+          font-size: 13px;
+        }
+
+        .ayca-orb-v2-mini .ayca-orb-v2-ring-one {
+          width: 46px;
+          height: 21px;
+        }
+
+        .ayca-orb-v2-mini .ayca-orb-v2-ring-two {
+          width: 41px;
+          height: 37px;
+        }
+
+        .ayca-orb-v2-mini .ayca-orb-v2-glow {
+          transform: scale(.65);
+          transform-origin: center;
+        }
+
+        @keyframes aycaOrbSpin {
+          from { transform: rotate(-22deg); }
+          to { transform: rotate(338deg); }
+        }
+
+        @keyframes aycaOrbPulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.035); }
+        }
+
+        @media (max-width: 640px) {
+          .ayca-header-orb-button {
+            width: 76px !important;
+            min-width: 76px !important;
+            height: 76px !important;
+          }
+
+          .ayca-header-orb-button .ayca-orb-v2 {
+            width: 68px;
+            height: 68px;
+          }
+
+          .ayca-header-orb-button .ayca-orb-v2-word {
+            font-size: 16px;
+          }
+        }
+
+
+        /* AYÇA ORB V3 — emerald / teal / cyan shared assistant identity */
+        .ayca-header-v3-stack {
+          position: relative;
+          z-index: 1;
+          flex: 0 0 auto;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          min-width: 144px;
+        }
+
+        .ayca-header-v3-period {
+          width: 126px;
+        }
+
+        .ayca-header-v3-period select {
+          width: 100%;
+          min-width: 0 !important;
+          min-height: 38px !important;
+          border-radius: 19px !important;
+          border-color: rgba(15,118,110,.18) !important;
+          box-shadow: 0 5px 14px rgba(15,118,110,.06) !important;
+        }
+
+        .ayca-header-orb-button {
+          width: 132px !important;
+          min-width: 132px !important;
+          height: 132px !important;
+          padding: 0 !important;
+          border: 0 !important;
+          border-radius: 50% !important;
+          background: transparent !important;
+          box-shadow: none !important;
+          overflow: visible !important;
+          transform: none !important;
+        }
+
+        .ayca-header-orbit,
+        .ayca-header-spark {
+          display: none !important;
+        }
+
+        .ayca-orb-v3 {
+          --orb-size: 116px;
+          position: relative;
+          width: var(--orb-size);
+          height: var(--orb-size);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 auto;
+          border-radius: 50%;
+          isolation: isolate;
+          background:
+            radial-gradient(circle at 34% 27%, rgba(255,255,255,.42) 0 4%, transparent 5%),
+            radial-gradient(circle at 48% 47%, #103b46 0 35%, #0a4850 46%, #0f766e 59%, #14b8a6 70%, #22d3ee 80%, #a7f3d0 87%, transparent 90%),
+            conic-gradient(from 205deg, #2dd4bf, #22d3ee, #34d399, #0f766e, #2dd4bf);
+          border: 1px solid rgba(94,234,212,.64);
+          box-shadow:
+            0 0 0 4px rgba(240,253,250,.78),
+            0 0 18px rgba(20,184,166,.34),
+            0 0 38px rgba(34,211,238,.18),
+            0 12px 30px rgba(15,118,110,.16),
+            inset 0 0 26px rgba(255,255,255,.08);
+          transition: transform .22s ease, box-shadow .22s ease, filter .22s ease;
+        }
+
+        .ayca-orb-v3::before {
+          content: "";
+          position: absolute;
+          inset: 10px;
+          z-index: -1;
+          border-radius: 50%;
+          border: 1px solid rgba(204,251,241,.26);
+          background:
+            radial-gradient(circle at 34% 30%, rgba(255,255,255,.12), transparent 18%),
+            radial-gradient(circle at 72% 74%, rgba(34,211,238,.11), transparent 25%),
+            rgba(2,44,50,.24);
+        }
+
+        .ayca-orb-v3::after {
+          content: "";
+          position: absolute;
+          inset: -7px;
+          z-index: -2;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(45,212,191,.18), rgba(34,211,238,.08) 48%, transparent 70%);
+          filter: blur(5px);
+        }
+
+        .ayca-orb-v3-word {
+          position: relative;
+          z-index: 6;
+          color: #f8fffe;
+          font-family: Inter, "Segoe UI", Arial, sans-serif;
+          font-size: calc(var(--orb-size) * .235);
+          line-height: 1;
+          font-weight: 880;
+          letter-spacing: -.065em;
+          text-shadow:
+            0 1px 0 rgba(255,255,255,.20),
+            0 0 14px rgba(94,234,212,.30);
+        }
+
+        .ayca-orb-v3-orbit {
+          position: absolute;
+          z-index: 4;
+          border-radius: 50%;
+          pointer-events: none;
+        }
+
+        .ayca-orb-v3-orbit-a {
+          width: 88%;
+          height: 38%;
+          border: 1.2px solid rgba(204,251,241,.58);
+          transform: rotate(-18deg);
+          box-shadow: 0 0 12px rgba(45,212,191,.16);
+        }
+
+        .ayca-orb-v3-orbit-b {
+          width: 72%;
+          height: 67%;
+          border: 1px solid rgba(103,232,249,.26);
+          transform: rotate(38deg);
+        }
+
+        .ayca-orb-v3-particle {
+          position: absolute;
+          z-index: 8;
+          border-radius: 50%;
+          background: #99f6e4;
+          box-shadow: 0 0 9px rgba(94,234,212,.9);
+        }
+
+        .ayca-orb-v3-p1 {
+          width: 8px;
+          height: 8px;
+          right: 9%;
+          top: 23%;
+        }
+
+        .ayca-orb-v3-p2 {
+          width: 6px;
+          height: 6px;
+          left: 10%;
+          bottom: 27%;
+          background: #67e8f9;
+        }
+
+        .ayca-orb-v3-p3 {
+          width: 5px;
+          height: 5px;
+          right: 21%;
+          bottom: 8%;
+          background: #6ee7b7;
+        }
+
+        .ayca-header-orb-button:hover .ayca-orb-v3 {
+          transform: translateY(-2px) scale(1.035);
+          filter: saturate(1.04) brightness(1.025);
+          box-shadow:
+            0 0 0 4px rgba(240,253,250,.88),
+            0 0 24px rgba(20,184,166,.44),
+            0 0 44px rgba(34,211,238,.22),
+            0 14px 34px rgba(15,118,110,.18),
+            inset 0 0 26px rgba(255,255,255,.10);
+        }
+
+        .ayca-orb-v3.is-thinking .ayca-orb-v3-orbit-a,
+        .ayca-header-orb-button.is-thinking .ayca-orb-v3-orbit-a {
+          animation: aycaOrbV3Spin 2.1s linear infinite;
+        }
+
+        .ayca-orb-v3.is-thinking,
+        .ayca-header-orb-button.is-thinking .ayca-orb-v3 {
+          animation: aycaOrbV3Pulse 1.65s ease-in-out infinite;
+        }
+
+        .ayca-orb-v3-stage {
+          --orb-size: 172px;
+          margin: 8px auto 15px;
+        }
+
+        .ayca-orb-v3-mini {
+          --orb-size: 48px;
+          box-shadow:
+            0 0 0 2px rgba(240,253,250,.86),
+            0 0 13px rgba(20,184,166,.22),
+            inset 0 0 13px rgba(255,255,255,.07);
+        }
+
+        .ayca-orb-v3-mini::before {
+          inset: 5px;
+        }
+
+        .ayca-orb-v3-mini::after {
+          inset: -3px;
+          filter: blur(3px);
+        }
+
+        .ayca-orb-v3-mini .ayca-orb-v3-particle {
+          transform: scale(.58);
+        }
+
+        .ayca-orb-v3-mini .ayca-orb-v3-orbit-a {
+          border-width: .8px;
+        }
+
+        .ayca-header-orb-button.has-alert::after {
+          content: "1";
+          position: absolute;
+          top: 8px;
+          right: 7px;
+          z-index: 20;
+          display: grid;
+          place-items: center;
+          width: 21px;
+          height: 21px;
+          border-radius: 50%;
+          background: #f97316;
+          color: #fff;
+          border: 2px solid #fff;
+          font-size: 10px;
+          font-weight: 900;
+          box-shadow: 0 4px 12px rgba(249,115,22,.25);
+        }
+
+        @keyframes aycaOrbV3Spin {
+          from { transform: rotate(-18deg); }
+          to { transform: rotate(342deg); }
+        }
+
+        @keyframes aycaOrbV3Pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.035); }
+        }
+
+        @media (max-width: 760px) {
+          .ayca-header-v3-stack {
+            min-width: 112px;
+          }
+
+          .ayca-header-orb-button {
+            width: 104px !important;
+            min-width: 104px !important;
+            height: 104px !important;
+          }
+
+          .ayca-orb-v3-header {
+            --orb-size: 92px;
+          }
+
+          .ayca-header-v3-period {
+            width: 108px;
+          }
+
+          .ayca-orb-v3-stage {
+            --orb-size: 148px;
+          }
+        }
+
+
+        /* AYÇA ORB V3.2 — assistant subtitle inside the sphere */
+        .ayca-orb-v3-logo {
+          position: relative;
+          z-index: 6;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          pointer-events: none;
+        }
+
+        .ayca-orb-v3-logo .ayca-orb-v3-word {
+          position: static;
+        }
+
+        .ayca-orb-v3-logo small {
+          display: block;
+          margin-left: .18em;
+          color: rgba(236, 253, 250, .78);
+          font-size: calc(var(--orb-size) * .072);
+          line-height: 1;
+          font-weight: 800;
+          letter-spacing: .22em;
+          text-shadow: 0 0 9px rgba(94, 234, 212, .24);
+        }
+
+        .ayca-orb-v3-mini .ayca-orb-v3-logo {
+          gap: 2px;
+        }
+
+        .ayca-orb-v3-mini .ayca-orb-v3-logo small {
+          font-size: calc(var(--orb-size) * .065);
+          letter-spacing: .16em;
+        }
+
+
+        /* AYÇA ORB V3.3 — free 2D dragging in header */
+        .ayca-header-orb-button {
+          width: 154px !important;
+          min-width: 154px !important;
+          height: 154px !important;
+          cursor: grab !important;
+          user-select: none;
+          -webkit-user-select: none;
+          will-change: transform;
+        }
+
+        .ayca-header-orb-button:active {
+          cursor: grabbing !important;
+        }
+
+        .ayca-orb-v3-header {
+          --orb-size: 140px;
+        }
+
+        @media (max-width: 760px) {
+          .ayca-header-orb-button {
+            width: 124px !important;
+            min-width: 124px !important;
+            height: 124px !important;
+          }
+
+          .ayca-orb-v3-header {
+            --orb-size: 110px;
+          }
+        }
+
+
+        /* AYÇA ORB V3.4 — brand colors + live assistant states */
+        .ayca-orb-v3-word {
+          display: inline-flex;
+          align-items: baseline;
+          justify-content: center;
+          gap: 0;
+          text-shadow: none;
+        }
+
+        .ayca-orb-v3-word .ayca-letter {
+          display: inline-block;
+          font: inherit;
+          letter-spacing: inherit;
+        }
+
+        .ayca-orb-v3-word .ayca-letter-navy {
+          color: #0f2747;
+          text-shadow:
+            0 1px 0 rgba(255,255,255,.35),
+            0 0 10px rgba(255,255,255,.18);
+        }
+
+        .ayca-orb-v3-word .ayca-letter-green {
+          color: #16a889;
+          text-shadow:
+            0 1px 0 rgba(255,255,255,.35),
+            0 0 12px rgba(45,212,191,.24);
+        }
+
+        .ayca-orb-v3-stage .ayca-orb-v3-orbit-a,
+        .ayca-orb-v3-mini .ayca-orb-v3-orbit-a {
+          transform-origin: 50% 50%;
+        }
+
+        .ayca-orb-v3-stage .ayca-orb-v3-orbit-b,
+        .ayca-orb-v3-mini .ayca-orb-v3-orbit-b {
+          transform-origin: 50% 50%;
+        }
+
+        /* Ready: very slow ambient motion so AYÇA never looks frozen */
+        .ayca-orb-v3.is-ready .ayca-orb-v3-orbit-a {
+          animation: aycaOrbitReadyA 8s linear infinite !important;
+        }
+
+        .ayca-orb-v3.is-ready .ayca-orb-v3-orbit-b {
+          animation: aycaOrbitReadyB 11s linear infinite reverse !important;
+        }
+
+        .ayca-orb-v3.is-ready .ayca-orb-v3-particle {
+          animation: aycaParticleFloat 3.8s ease-in-out infinite alternate;
+        }
+
+        /* Thinking: visibly faster orbital motion + pulse */
+        .ayca-orb-v3.is-thinking .ayca-orb-v3-orbit-a,
+        .ayca-header-orb-button.is-thinking .ayca-orb-v3-orbit-a {
+          animation: aycaOrbitThinkingA 1.45s linear infinite !important;
+        }
+
+        .ayca-orb-v3.is-thinking .ayca-orb-v3-orbit-b,
+        .ayca-header-orb-button.is-thinking .ayca-orb-v3-orbit-b {
+          animation: aycaOrbitThinkingB 2.05s linear infinite reverse !important;
+        }
+
+        .ayca-orb-v3.is-thinking {
+          animation: aycaThinkingPulse 1.15s ease-in-out infinite !important;
+          box-shadow:
+            0 0 0 4px rgba(240,253,250,.9),
+            0 0 28px rgba(20,184,166,.52),
+            0 0 56px rgba(34,211,238,.28),
+            0 14px 38px rgba(15,118,110,.22),
+            inset 0 0 28px rgba(255,255,255,.12);
+        }
+
+        .ayca-orb-v3.is-thinking .ayca-orb-v3-particle {
+          animation: aycaParticleThinking 1.05s ease-in-out infinite alternate !important;
+        }
+
+        /* Alert / insight ready: more energetic but not frantic */
+        .ayca-orb-v3.has-alert .ayca-orb-v3-orbit-a {
+          animation: aycaOrbitAlertA 4.5s linear infinite !important;
+        }
+
+        .ayca-orb-v3.has-alert .ayca-orb-v3-orbit-b {
+          animation: aycaOrbitAlertB 6.5s linear infinite reverse !important;
+        }
+
+        .ayca-orb-v3.has-alert {
+          animation: aycaAlertBreath 2.1s ease-in-out infinite !important;
+        }
+
+        .ayca-orb-v3-status-text {
+          margin: -4px auto 14px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          min-height: 24px;
+          padding: 5px 10px;
+          border-radius: 999px;
+          background: rgba(255,255,255,.76);
+          border: 1px solid rgba(15,118,110,.12);
+          color: #365267;
+          font-size: 11px;
+          font-weight: 800;
+          box-shadow: 0 5px 16px rgba(15,118,110,.06);
+        }
+
+        .ayca-orb-v3-status-text .ayca-status-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 8px rgba(16,185,129,.55);
+        }
+
+        .ayca-orb-v3-status-text.is-thinking {
+          color: #0f766e;
+          border-color: rgba(20,184,166,.22);
+          background: rgba(240,253,250,.88);
+        }
+
+        .ayca-orb-v3-status-text.is-thinking .ayca-status-dot {
+          background: #22d3ee;
+          box-shadow: 0 0 10px rgba(34,211,238,.68);
+          animation: aycaStatusBlink .8s ease-in-out infinite alternate;
+        }
+
+        .ayca-orb-v3-status-text.has-alert .ayca-status-dot {
+          background: #f59e0b;
+          box-shadow: 0 0 9px rgba(245,158,11,.48);
+        }
+
+        @keyframes aycaOrbitReadyA {
+          from { transform: rotate(-18deg); }
+          to   { transform: rotate(342deg); }
+        }
+
+        @keyframes aycaOrbitReadyB {
+          from { transform: rotate(38deg); }
+          to   { transform: rotate(398deg); }
+        }
+
+        @keyframes aycaOrbitThinkingA {
+          from { transform: rotate(-18deg) scaleX(1); }
+          to   { transform: rotate(342deg) scaleX(1); }
+        }
+
+        @keyframes aycaOrbitThinkingB {
+          from { transform: rotate(38deg); }
+          to   { transform: rotate(398deg); }
+        }
+
+        @keyframes aycaOrbitAlertA {
+          from { transform: rotate(-18deg); }
+          to   { transform: rotate(342deg); }
+        }
+
+        @keyframes aycaOrbitAlertB {
+          from { transform: rotate(38deg); }
+          to   { transform: rotate(398deg); }
+        }
+
+        @keyframes aycaParticleFloat {
+          from { translate: 0 -2px; opacity: .72; }
+          to   { translate: 0 3px; opacity: 1; }
+        }
+
+        @keyframes aycaParticleThinking {
+          from { transform: scale(.75); opacity: .55; }
+          to   { transform: scale(1.25); opacity: 1; }
+        }
+
+        @keyframes aycaThinkingPulse {
+          0%, 100% { transform: scale(1); filter: brightness(1); }
+          50% { transform: scale(1.035); filter: brightness(1.08); }
+        }
+
+        @keyframes aycaAlertBreath {
+          0%, 100% { filter: saturate(1) brightness(1); }
+          50% { filter: saturate(1.08) brightness(1.04); }
+        }
+
+        @keyframes aycaStatusBlink {
+          from { opacity: .45; transform: scale(.8); }
+          to { opacity: 1; transform: scale(1.15); }
+        }
+
+
+        /* AYÇA ORB V3.5 — lighter mint/green identity */
+        .ayca-orb-v3 {
+          background:
+            radial-gradient(circle at 34% 27%, rgba(255,255,255,.72) 0 4%, transparent 5%),
+            radial-gradient(circle at 48% 47%,
+              #ecfdf5 0 24%,
+              #d1fae5 38%,
+              #a7f3d0 52%,
+              #6ee7b7 66%,
+              #5eead4 76%,
+              #67e8f9 84%,
+              #ecfeff 89%,
+              transparent 91%),
+            conic-gradient(from 205deg, #a7f3d0, #67e8f9, #6ee7b7, #99f6e4, #a7f3d0);
+          border-color: rgba(52,211,153,.55);
+          box-shadow:
+            0 0 0 4px rgba(248,255,252,.90),
+            0 0 17px rgba(52,211,153,.26),
+            0 0 34px rgba(45,212,191,.15),
+            0 12px 28px rgba(16,185,129,.11),
+            inset 0 0 24px rgba(255,255,255,.30);
+        }
+
+        .ayca-orb-v3::before {
+          background:
+            radial-gradient(circle at 34% 30%, rgba(255,255,255,.34), transparent 20%),
+            radial-gradient(circle at 72% 74%, rgba(103,232,249,.18), transparent 27%),
+            rgba(209,250,229,.20);
+          border-color: rgba(255,255,255,.50);
+        }
+
+        .ayca-orb-v3::after {
+          background: radial-gradient(circle, rgba(110,231,183,.16), rgba(94,234,212,.08) 48%, transparent 70%);
+        }
+
+        .ayca-orb-v3-orbit-a {
+          border-color: rgba(15,118,110,.34);
+        }
+
+        .ayca-orb-v3-orbit-b {
+          border-color: rgba(14,116,144,.20);
+        }
+
+        .ayca-orb-v3-particle {
+          background: #34d399;
+          box-shadow: 0 0 8px rgba(16,185,129,.52);
+        }
+
+        .ayca-orb-v3-p2 {
+          background: #22d3ee;
+        }
+
+        .ayca-orb-v3-p3 {
+          background: #10b981;
+        }
+
+        .ayca-orb-v3-logo small {
+          color: rgba(15,39,71,.62);
+          text-shadow: none;
+        }
+
+        /* Keep the header orb freely draggable in both axes. */
+        .ayca-header-orb-button {
+          cursor: grab !important;
+          touch-action: none;
+          user-select: none;
+          -webkit-user-select: none;
+          will-change: transform;
+        }
+
+        .ayca-header-orb-button:active {
+          cursor: grabbing !important;
+        }
+
+
+        /* AYÇA ORB V3.6 — reference violet/blue/cyan palette */
+        .ayca-orb-v3 {
+          background:
+            radial-gradient(circle at 32% 24%, rgba(255,255,255,.78) 0 3.5%, transparent 6%),
+            radial-gradient(circle at 34% 30%, rgba(129,92,246,.88), transparent 34%),
+            linear-gradient(135deg, #7c4df5 5%, #655cf5 34%, #4f8eea 62%, #29c7c7 100%) !important;
+          border-color: rgba(118,91,245,.30) !important;
+          box-shadow:
+            0 0 0 3px rgba(255,255,255,.72),
+            0 0 22px rgba(99,102,241,.24),
+            0 0 38px rgba(34,211,238,.12),
+            0 13px 30px rgba(79,70,229,.13),
+            inset 0 0 26px rgba(255,255,255,.10) !important;
+        }
+
+        .ayca-orb-v3::before {
+          background:
+            radial-gradient(circle at 30% 26%, rgba(255,255,255,.16), transparent 20%),
+            radial-gradient(circle at 74% 76%, rgba(34,211,238,.12), transparent 26%),
+            transparent !important;
+          border-color: rgba(255,255,255,.14) !important;
+        }
+
+        .ayca-orb-v3::after {
+          background: radial-gradient(circle, rgba(99,102,241,.15), rgba(34,211,238,.07) 50%, transparent 72%) !important;
+        }
+
+        .ayca-orb-v3-orbit-a {
+          border-color: rgba(139,92,246,.42) !important;
+        }
+
+        .ayca-orb-v3-orbit-b {
+          border-color: rgba(56,189,248,.38) !important;
+        }
+
+        .ayca-orb-v3-word .ayca-letter-navy {
+          color: #ffffff !important;
+          text-shadow: 0 1px 1px rgba(15,23,42,.12), 0 0 10px rgba(255,255,255,.16) !important;
+        }
+
+        .ayca-orb-v3-word .ayca-letter-green {
+          color: #172554 !important;
+          text-shadow: 0 1px 0 rgba(255,255,255,.15) !important;
+        }
+
+        .ayca-orb-v3-logo small {
+          color: rgba(255,255,255,.88) !important;
+          text-shadow: 0 1px 2px rgba(15,23,42,.14) !important;
+        }
+
+        .ayca-orb-v3-particle {
+          background: #ffffff !important;
+          box-shadow: 0 0 9px rgba(255,255,255,.62) !important;
+        }
+
+        .ayca-orb-v3-p2 {
+          background: #67e8f9 !important;
+        }
+
+        /* Drag target must stay movable in both axes; override hover transforms. */
+        .ayca-header-orb-button {
+          cursor: grab !important;
+          touch-action: none !important;
+          user-select: none !important;
+          -webkit-user-select: none !important;
+          will-change: transform !important;
+          position: relative;
+          z-index: 5;
+        }
+
+        .ayca-header-orb-button:active {
+          cursor: grabbing !important;
+        }
+
+
+        /* AYÇA ORB V3.7 — deep teal reference tone */
+        .ayca-orb-v3 {
+          background:
+            radial-gradient(circle at 31% 23%, rgba(255,255,255,.34) 0 3%, transparent 5%),
+            radial-gradient(circle at 42% 38%, rgba(12,91,94,.52), transparent 42%),
+            linear-gradient(145deg, #0b5558 0%, #084c50 42%, #06464a 72%, #053f43 100%) !important;
+          border-color: rgba(93,210,205,.32) !important;
+          box-shadow:
+            0 0 0 3px rgba(238,255,253,.74),
+            0 0 18px rgba(13,148,136,.20),
+            0 0 34px rgba(6,95,100,.16),
+            0 12px 28px rgba(4,65,69,.16),
+            inset 0 0 28px rgba(255,255,255,.045) !important;
+        }
+
+        .ayca-orb-v3::before {
+          background:
+            repeating-linear-gradient(
+              135deg,
+              rgba(255,255,255,.018) 0px,
+              rgba(255,255,255,.018) 1px,
+              transparent 1px,
+              transparent 10px
+            ) !important;
+          border-color: rgba(255,255,255,.10) !important;
+        }
+
+        .ayca-orb-v3::after {
+          background: radial-gradient(circle, rgba(45,212,191,.10), rgba(6,78,82,.07) 52%, transparent 72%) !important;
+        }
+
+        .ayca-orb-v3-orbit-a {
+          border-color: rgba(255,255,255,.34) !important;
+        }
+
+        .ayca-orb-v3-orbit-b {
+          border-color: rgba(153,246,228,.20) !important;
+        }
+
+        .ayca-orb-v3-word .ayca-letter,
+        .ayca-orb-v3-word .ayca-letter-navy,
+        .ayca-orb-v3-word .ayca-letter-green {
+          color: #ffffff !important;
+          text-shadow: 0 1px 2px rgba(0,0,0,.18), 0 0 10px rgba(255,255,255,.08) !important;
+        }
+
+        .ayca-orb-v3-logo small {
+          color: rgba(255,255,255,.84) !important;
+          text-shadow: 0 1px 2px rgba(0,0,0,.16) !important;
+        }
+
+        .ayca-orb-v3-particle,
+        .ayca-orb-v3-p2,
+        .ayca-orb-v3-p3 {
+          background: #ffffff !important;
+          box-shadow: 0 0 8px rgba(255,255,255,.46) !important;
+        }
+
+
+        /* Dashboard spacing fix — original layout preserved */
+        .dashboard-hero {
+          margin-bottom: 18px !important;
+        }
+
+        .dashboard-kpis,
+        .dashboard-finance-kpis {
+          gap: 16px !important;
+          margin-bottom: 18px !important;
+          align-items: stretch !important;
+        }
+
+        .dashboard-kpis > *,
+        .dashboard-finance-kpis > * {
+          min-width: 0 !important;
+          height: auto !important;
+        }
+
+        .dashboard-kpis .insight-kpi,
+        .dashboard-finance-kpis .insight-kpi {
+          padding: 18px 20px !important;
+          min-height: 158px !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: flex-start !important;
+          justify-content: flex-start !important;
+          gap: 0 !important;
+          overflow: hidden !important;
+        }
+
+        .dashboard-kpis .insight-kpi > b,
+        .dashboard-finance-kpis .insight-kpi > b {
+          position: static !important;
+          align-self: flex-end !important;
+          margin-bottom: -18px !important;
+          line-height: 1 !important;
+          flex: 0 0 auto !important;
+        }
+
+        .dashboard-kpis .insight-kpi > span,
+        .dashboard-finance-kpis .insight-kpi > span {
+          display: block !important;
+          width: 100% !important;
+          margin: 0 0 10px !important;
+          padding-right: 32px !important;
+          color: #64748b !important;
+          line-height: 1.25 !important;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+        }
+
+        .dashboard-kpis .insight-kpi > strong,
+        .dashboard-finance-kpis .insight-kpi > strong {
+          display: block !important;
+          width: 100% !important;
+          margin: 0 0 10px !important;
+          line-height: 1.05 !important;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+          word-break: break-word !important;
+        }
+
+        .dashboard-kpis .insight-kpi > p,
+        .dashboard-finance-kpis .insight-kpi > p {
+          width: 100% !important;
+          margin: 0 0 12px !important;
+          line-height: 1.45 !important;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+        }
+
+        .dashboard-kpis .navigation-hint,
+        .dashboard-finance-kpis .navigation-hint {
+          position: static !important;
+          display: block !important;
+          width: 100% !important;
+          margin-top: auto !important;
+          padding-top: 4px !important;
+          line-height: 1.25 !important;
+          white-space: normal !important;
+        }
+
+        [aria-label="Dashboard mini analiz grafikleri"] {
+          gap: 16px !important;
+          margin-bottom: 18px !important;
+          align-items: stretch !important;
+        }
+
+        [aria-label="Dashboard mini analiz grafikleri"] > button {
+          min-width: 0 !important;
+          overflow: hidden !important;
+        }
+
+        [aria-label="Dashboard mini analiz grafikleri"] > button > div:first-child {
+          min-width: 0 !important;
+          align-items: flex-start !important;
+        }
+
+        [aria-label="Dashboard mini analiz grafikleri"] > button > div:first-child > div {
+          min-width: 0 !important;
+        }
+
+        [aria-label="Dashboard mini analiz grafikleri"] strong,
+        [aria-label="Dashboard mini analiz grafikleri"] small,
+        [aria-label="Dashboard mini analiz grafikleri"] span {
+          max-width: 100% !important;
+          overflow-wrap: anywhere !important;
+        }
+
+        .dashboard-command-grid,
+        .dashboard-lower-grid {
+          gap: 16px !important;
+          align-items: stretch !important;
+        }
+
+        .dashboard-command-grid > *,
+        .dashboard-lower-grid > * {
+          min-width: 0 !important;
+          overflow: hidden !important;
+        }
+
+        /* Tablet: prevent cards becoming too narrow and colliding */
+        @media (max-width: 1280px) and (min-width: 901px) {
+          .dashboard-kpis {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .dashboard-finance-kpis {
+            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          }
+        }
+
+        @media (max-width: 1050px) {
+          .dashboard-finance-kpis {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .dashboard-kpis,
+          .dashboard-finance-kpis {
+            grid-template-columns: 1fr !important;
+            gap: 12px !important;
+          }
+
+          .dashboard-kpis .insight-kpi,
+          .dashboard-finance-kpis .insight-kpi {
+            min-height: 142px !important;
+            padding: 16px !important;
+          }
+
+          [aria-label="Dashboard mini analiz grafikleri"] {
+            gap: 12px !important;
+          }
+        }
+
+
+        /* Dashboard top 4 KPI cards — fill the entire row evenly */
+        .dashboard-kpis {
+          width: 100% !important;
+          max-width: none !important;
+          display: grid !important;
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          column-gap: 18px !important;
+          row-gap: 18px !important;
+        }
+
+        .dashboard-kpis > .insight-kpi {
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: none !important;
+          box-sizing: border-box !important;
+        }
+
+        @media (max-width: 1180px) and (min-width: 761px) {
+          .dashboard-kpis {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+        }
+
+        @media (max-width: 760px) {
+          .dashboard-kpis {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+      `}
+
+      </style>
     </main>
   );
 }
