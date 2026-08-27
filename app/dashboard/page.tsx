@@ -1284,6 +1284,166 @@ export default function DashboardPage() {
       (first, second) => second.value - first.value,
     )[0] ?? null;
 
+  const nearestRunoutProduct =
+    [...stockRunoutProducts]
+      .filter((item) => Number.isFinite(item.estimated_runout_days))
+      .sort((a, b) => a.estimated_runout_days - b.estimated_runout_days)[0] ??
+    null;
+
+  const nearestExpiryProduct =
+    [...expiryProducts]
+      .filter((item) => Number.isFinite(item.days_left))
+      .sort((a, b) => a.days_left - b.days_left)[0] ??
+    null;
+
+  type DashboardBriefingItem = {
+    id: string;
+    level: "critical" | "high" | "medium" | "opportunity";
+    levelLabel: string;
+    category: string;
+    title: string;
+    detail: string;
+    actionLabel: string;
+    action: "stock" | "risk" | "finance" | "patient" | "assistant";
+  };
+
+  const dashboardBriefingItems: DashboardBriefingItem[] = [];
+
+  if (hasAnalysis && nearestRunoutProduct) {
+    dashboardBriefingItems.push({
+      id: "runout",
+      level:
+        nearestRunoutProduct.estimated_runout_days <= 5 ? "critical" : "high",
+      levelLabel:
+        nearestRunoutProduct.estimated_runout_days <= 5 ? "Kritik" : "Yüksek",
+      category: "Stok",
+      title: `${nearestRunoutProduct.product_name} ${Math.max(
+        0,
+        Math.round(nearestRunoutProduct.estimated_runout_days),
+      )} gün içinde tükenebilir`,
+      detail: `Mevcut stok ${nearestRunoutProduct.stock} adet. Son satış verisine göre günlük tüketim ${nearestRunoutProduct.daily_consumption.toLocaleString(
+        "tr-TR",
+        { maximumFractionDigits: 1 },
+      )} adet.`,
+      actionLabel: "Siparişleri aç",
+      action: "stock",
+    });
+  } else if (hasAnalysis && (criticalStockCount > 0 || zeroStockCount > 0)) {
+    dashboardBriefingItems.push({
+      id: "stock-risk",
+      level: zeroStockCount > 0 ? "critical" : "high",
+      levelLabel: zeroStockCount > 0 ? "Kritik" : "Yüksek",
+      category: "Stok",
+      title: `${criticalStockCount + zeroStockCount} üründe stok müdahalesi gerekiyor`,
+      detail: `${zeroStockCount} ürün sıfır stokta, ${criticalStockCount} ürün kritik seviyede.`,
+      actionLabel: "Stok riskini aç",
+      action: "stock",
+    });
+  }
+
+  if (hasAnalysis && nearestExpiryProduct) {
+    dashboardBriefingItems.push({
+      id: "expiry",
+      level: nearestExpiryProduct.days_left <= 30 ? "critical" : "high",
+      levelLabel: nearestExpiryProduct.days_left <= 30 ? "Kritik" : "Yüksek",
+      category: "SKT",
+      title: `${nearestExpiryProduct.product_name} için ${Math.max(
+        0,
+        Math.round(nearestExpiryProduct.days_left),
+      )} gün SKT süresi kaldı`,
+      detail: `Stok ${nearestExpiryProduct.stock} adet · yaklaşık ${nearestExpiryProduct.stock_value.toLocaleString(
+        "tr-TR",
+      )} ₺ ürün değeri riskte.`,
+      actionLabel: "SKT listesini aç",
+      action: "risk",
+    });
+  }
+
+  if (hasAnalysis && (deadStockCount > 0 || deadStockValue > 0)) {
+    dashboardBriefingItems.push({
+      id: "capital",
+      level: deadStockValue > 0 ? "high" : "medium",
+      levelLabel: deadStockValue > 0 ? "Yüksek" : "Orta",
+      category: "Sermaye",
+      title: `${deadStockCount} ürün stokta gereksiz sermaye bağlıyor`,
+      detail:
+        deadStockValue > 0
+          ? `${deadStockValue.toLocaleString(
+              "tr-TR",
+            )} ₺ ölü stok değeri var. İade, transfer veya satış aksiyonu değerlendirilebilir.`
+          : "Uzun süredir hareket görmeyen ürünleri gözden geçir.",
+      actionLabel: "Ölü stok analizini aç",
+      action: "risk",
+    });
+  }
+
+  if (hasAnalysis && financeAvailable) {
+    dashboardBriefingItems.push({
+      id: "finance",
+      level: profitMargin < 15 ? "high" : profitMargin < 25 ? "medium" : "opportunity",
+      levelLabel: profitMargin < 15 ? "Yüksek" : profitMargin < 25 ? "Orta" : "Fırsat",
+      category: "Finans",
+      title: `Kâr marjın %${profitMargin.toLocaleString("tr-TR", {
+        maximumFractionDigits: 1,
+      })}`,
+      detail: `${financePeriodLabel} cirosu ${totalTurnover.toLocaleString(
+        "tr-TR",
+      )} ₺, doğrulanmış kâr ${totalProfit.toLocaleString("tr-TR")} ₺.`,
+      actionLabel: "Finansal analizi aç",
+      action: "finance",
+    });
+  }
+
+  if (hasAnalysis && (lostPatientRiskCount > 0 || lapsedPatientCount > 0)) {
+    dashboardBriefingItems.push({
+      id: "patient",
+      level: lostPatientRiskCount > 0 ? "medium" : "opportunity",
+      levelLabel: lostPatientRiskCount > 0 ? "Orta" : "Fırsat",
+      category: "Hasta",
+      title:
+        lostPatientRiskCount > 0
+          ? `${lostPatientRiskCount} hasta kayıp riski taşıyor`
+          : `${lapsedPatientCount} hasta yeniden kazanılabilir`,
+      detail: `${lapsedPatientCount} hasta gelmeyi bırakmış görünüyor. Hasta sadakati ekranından önceliklendirilebilir.`,
+      actionLabel: "Hasta içgörülerini aç",
+      action: "patient",
+    });
+  }
+
+  if (hasAnalysis && suggestionCount > 0) {
+    dashboardBriefingItems.push({
+      id: "orders",
+      level: "opportunity",
+      levelLabel: "Fırsat",
+      category: "Sipariş",
+      title: `${suggestionCount} akıllı sipariş önerisi hazır`,
+      detail: estimatedOrderAmount
+        ? `Önerilen toplam sipariş bütçesi yaklaşık ${estimatedOrderAmount.toLocaleString(
+            "tr-TR",
+          )} ₺.`
+        : "Satış hızı ve stok süresine göre sipariş fırsatları önceliklendirildi.",
+      actionLabel: "Sipariş önerilerini aç",
+      action: "stock",
+    });
+  }
+
+  const dashboardBriefing =
+    dashboardBriefingItems.length > 0
+      ? dashboardBriefingItems.slice(0, 6)
+      : [
+          {
+            id: "waiting",
+            level: "medium" as const,
+            levelLabel: "Bekliyor",
+            category: "AYÇA",
+            title: "Bugünün öncelikleri analizden sonra burada oluşacak",
+            detail:
+              "Üç veri dosyasını analiz ettiğinde AYÇA stok, finans, SKT, sermaye ve hasta sinyallerini birlikte sıralayacak.",
+            actionLabel: "AYÇA’ya sor",
+            action: "assistant" as const,
+          },
+        ];
+
   const copilotHealthScore = healthScore;
   const copilotStatus = healthStatus;
   const copilotStrong = morningBriefing?.strong ?? [];
@@ -2682,23 +2842,58 @@ export default function DashboardPage() {
                     AYÇA’ya sor →
                   </button>
                 </div>
-                <div className="priority-list">
-                  {(morningBriefing?.top_actions?.length
-                    ? morningBriefing.top_actions
-                    : [
-                        `${metrics?.critical_stock_count ?? 0} kritik stok ürününü kontrol et.`,
-                        `${overStockCount ?? 0} fazla stok ürününün siparişini gözden geçir.`,
-                        `${suggestionCount} sipariş önerisini bütçeye göre sırala.`,
-                      ]
-                  )
-                    .slice(0, 4)
-                    .map((item, index) => (
-                      <div className="priority-item" key={index}>
-                        <span>{String(index + 1).padStart(2, "0")}</span>
-                        <p>{item}</p>
-                        <b>→</b>
+                <div className="ayca-briefing-summary">
+                  <strong>
+                    {hasAnalysis
+                      ? `Bugün eczanen için ${dashboardBriefing.length} önemli içgörü var.`
+                      : "AYÇA günlük briefingi analiz bekliyor."}
+                  </strong>
+                  <span>
+                    Öncelik, zaman baskısı ve finansal etkiye göre sıralandı.
+                  </span>
+                </div>
+
+                <div className="ayca-briefing-list">
+                  {dashboardBriefing.map((item, index) => (
+                    <article
+                      className={`ayca-briefing-item is-${item.level}`}
+                      key={item.id}
+                    >
+                      <div className="ayca-briefing-meta">
+                        <span className={`ayca-briefing-level is-${item.level}`}>
+                          {String(index + 1).padStart(2, "0")} · {item.levelLabel}
+                        </span>
+                        <span className="ayca-briefing-category">
+                          {item.category}
+                        </span>
                       </div>
-                    ))}
+
+                      <div className="ayca-briefing-copy">
+                        <strong>{item.title}</strong>
+                        <p>{item.detail}</p>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="ayca-briefing-action"
+                        onClick={() => {
+                          if (item.action === "stock") {
+                            navigateToOperation("stock");
+                          } else if (item.action === "risk") {
+                            navigateToOperation("risk");
+                          } else if (item.action === "finance") {
+                            navigateToModule("💰 Finans");
+                          } else if (item.action === "patient") {
+                            navigateToModule("👥 Hasta & Reçete");
+                          } else {
+                            setIsAssistantDrawerOpen(true);
+                          }
+                        }}
+                      >
+                        {item.actionLabel} <span>→</span>
+                      </button>
+                    </article>
+                  ))}
                 </div>
               </div>
 
@@ -7256,6 +7451,204 @@ export default function DashboardPage() {
         @media (max-width: 760px) {
           .dashboard-kpis {
             grid-template-columns: 1fr !important;
+          }
+        }
+
+
+        /* AYÇA Daily Briefing V1 */
+        .command-card {
+          min-width: 0;
+        }
+
+        .ayca-briefing-summary {
+          margin: 2px 0 13px;
+          padding: 11px 13px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, rgba(6,78,82,.055), rgba(45,212,191,.035));
+          border: 1px solid rgba(6,78,82,.09);
+        }
+
+        .ayca-briefing-summary strong {
+          display: block;
+          color: #102a43;
+          font-size: 12px;
+          line-height: 1.35;
+          font-weight: 850;
+        }
+
+        .ayca-briefing-summary span {
+          display: block;
+          margin-top: 3px;
+          color: #8291a7;
+          font-size: 9px;
+          line-height: 1.4;
+          font-weight: 650;
+        }
+
+        .ayca-briefing-list {
+          display: grid;
+          gap: 10px;
+        }
+
+        .ayca-briefing-item {
+          position: relative;
+          display: grid;
+          grid-template-columns: 118px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 14px;
+          min-width: 0;
+          min-height: 84px;
+          padding: 13px 14px 13px 15px;
+          overflow: hidden;
+          border: 1px solid #e3e9ef;
+          border-radius: 13px;
+          background: #fbfcfd;
+        }
+
+        .ayca-briefing-item::before {
+          content: "";
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          left: 0;
+          width: 3px;
+          background: #64748b;
+        }
+
+        .ayca-briefing-item.is-critical::before { background: #ef4444; }
+        .ayca-briefing-item.is-high::before { background: #f59e0b; }
+        .ayca-briefing-item.is-medium::before { background: #6366f1; }
+        .ayca-briefing-item.is-opportunity::before { background: #0f8a6c; }
+
+        .ayca-briefing-meta {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          min-width: 0;
+          flex-wrap: wrap;
+        }
+
+        .ayca-briefing-level,
+        .ayca-briefing-category {
+          display: inline-flex;
+          align-items: center;
+          min-height: 24px;
+          padding: 4px 7px;
+          border-radius: 6px;
+          font-size: 8px;
+          line-height: 1;
+          font-weight: 850;
+          white-space: nowrap;
+        }
+
+        .ayca-briefing-level {
+          border: 1px solid #e2e8f0;
+          background: #fff;
+          color: #64748b;
+        }
+
+        .ayca-briefing-level.is-critical {
+          color: #dc2626;
+          border-color: #fecaca;
+          background: #fff5f5;
+        }
+
+        .ayca-briefing-level.is-high {
+          color: #d97706;
+          border-color: #fed7aa;
+          background: #fff8ed;
+        }
+
+        .ayca-briefing-level.is-medium {
+          color: #4f46e5;
+          border-color: #c7d2fe;
+          background: #f5f7ff;
+        }
+
+        .ayca-briefing-level.is-opportunity {
+          color: #0f8a6c;
+          border-color: #bfeade;
+          background: #f0fbf7;
+        }
+
+        .ayca-briefing-category {
+          padding-left: 0;
+          padding-right: 0;
+          background: transparent;
+          color: #94a3b8;
+        }
+
+        .ayca-briefing-copy {
+          min-width: 0;
+        }
+
+        .ayca-briefing-copy strong {
+          display: block;
+          color: #172033;
+          font-size: 12px;
+          line-height: 1.35;
+          font-weight: 850;
+          letter-spacing: -.01em;
+          overflow-wrap: anywhere;
+        }
+
+        .ayca-briefing-copy p {
+          margin: 4px 0 0;
+          color: #7b879a;
+          font-size: 9px;
+          line-height: 1.5;
+          font-weight: 600;
+          overflow-wrap: anywhere;
+        }
+
+        .ayca-briefing-action {
+          min-width: 116px;
+          padding: 8px 10px;
+          border: 1px solid #dbe4eb;
+          border-radius: 9px;
+          background: #fff;
+          color: #0b5558;
+          font-size: 9px;
+          line-height: 1.2;
+          font-weight: 850;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+        }
+
+        .ayca-briefing-action:hover {
+          transform: translateY(-1px);
+          border-color: rgba(6,78,82,.28);
+          box-shadow: 0 6px 14px rgba(6,78,82,.07);
+        }
+
+        .ayca-briefing-action span {
+          margin-left: 4px;
+        }
+
+        @media (max-width: 1180px) {
+          .ayca-briefing-item {
+            grid-template-columns: 105px minmax(0, 1fr);
+          }
+
+          .ayca-briefing-action {
+            grid-column: 2;
+            justify-self: start;
+            min-width: 0;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .ayca-briefing-item {
+            grid-template-columns: 1fr;
+            gap: 8px;
+            padding: 12px 13px;
+          }
+
+          .ayca-briefing-action {
+            grid-column: auto;
+            justify-self: stretch;
+            width: 100%;
           }
         }
 
