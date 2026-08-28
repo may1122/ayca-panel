@@ -362,7 +362,7 @@ const financePeriodLabels: Record<FinancePeriod, string> = {
   all: "Tümü",
 };
 
-export default function DashboardPage() {
+function DashboardPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [email, setEmail] = useState("");
@@ -1263,13 +1263,6 @@ export default function DashboardPage() {
   const canGoToNextWeek =
     financePeriod === "week" && weekOffset > 0;
 
-  const totalDebt =
-    financeMetrics?.total_debt ??
-    financeMetrics?.total_payables ??
-    financeMetrics?.debt_total ??
-    financeMetrics?.outstanding_debt ??
-    null;
-
   const topDoctor =
     [...doctorMetrics].sort(
       (first, second) => (second.turnover ?? 0) - (first.turnover ?? 0),
@@ -1468,44 +1461,13 @@ export default function DashboardPage() {
   );
 
   function createTodayPlan() {
-    if (!analyzeResult) {
-      setCopilotTab("ask");
-      void submitCopilotQuestion("Bugün ne yapmalıyım?");
-      return;
-    }
+    setActiveModule("🏠 Dashboard");
 
-    const taskContext = [
-      criticalStockCount > 0
-        ? `${criticalStockCount} kritik stok ürünü var`
-        : null,
-      zeroStockCount > 0
-        ? `${zeroStockCount} sıfır stok ürünü var`
-        : null,
-      (overStockCount ?? 0) > 0
-        ? `${overStockCount} fazla stok ürünü var`
-        : null,
-      deadStockCount > 0
-        ? `${deadStockCount} ölü stok ürünü var`
-        : null,
-      suggestionCount > 0
-        ? `${suggestionCount} sipariş önerisi var`
-        : null,
-    ]
-      .filter((item): item is string => Boolean(item))
-      .join(", ");
-
-    const prompt = [
-      "Bugünkü eczane verilerime göre bana uygulanabilir bir görev planı oluştur.",
-      "Görevleri önem sırasına koy ve her görev için ne yapacağımı kısa ve net yaz.",
-      "Görevleri mümkünse Acil / Bugün / Bekleyebilir olarak ayır.",
-      taskContext ? `Mevcut sinyaller: ${taskContext}.` : "",
-      "Sadece doğrulanmış analiz verilerimi kullan.",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    setCopilotTab("ask");
-    void submitCopilotQuestion(prompt);
+    window.setTimeout(() => {
+      document
+        .getElementById("ayca-morning-briefing")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
   }
 
   async function submitCopilotQuestion(question?: string) {
@@ -2532,12 +2494,12 @@ export default function DashboardPage() {
             </section>
 
             <section
-              className="insight-kpi-grid dashboard-finance-kpis responsive-grid-3"
-              style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+              className="dashboard-finance-summary-grid"
+              aria-label="Dashboard finans ve stok özeti"
             >
               <button
                 type="button"
-                className="insight-kpi dashboard-navigation-card"
+                className="insight-kpi dashboard-navigation-card dashboard-finance-compact-kpi"
                 onClick={() => navigateToModule("💰 Finans")}
               >
                 <b>💵</b>
@@ -2557,7 +2519,7 @@ export default function DashboardPage() {
 
               <button
                 type="button"
-                className="insight-kpi dashboard-navigation-card"
+                className="insight-kpi dashboard-navigation-card dashboard-finance-compact-kpi"
                 onClick={() => navigateToModule("💰 Finans")}
               >
                 <b>📈</b>
@@ -2577,155 +2539,18 @@ export default function DashboardPage() {
 
               <button
                 type="button"
-                className="insight-kpi dashboard-navigation-card"
-                onClick={() => navigateToModule("💰 Finans")}
-              >
-                <b>🧾</b>
-                <span>Borçlar</span>
-                <strong>
-                  {totalDebt != null
-                    ? `${totalDebt.toLocaleString("tr-TR")} ₺`
-                    : "-"}
-                </strong>
-                <p>
-                  {totalDebt != null
-                    ? "Mevcut açık borç / ödeme yükümlülüğü"
-                    : "Borç verisi analiz sonucunda bulunamadı"}
-                </p>
-                <em className="navigation-hint">Finansı aç →</em>
-              </button>
-            </section>
-
-            <section
-              aria-label="Dashboard mini analiz grafikleri"
-              className="dashboard-mini-grid"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                gap: 14,
-                marginBottom: 18,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => navigateToModule("💰 Finans")}
-                style={{
-                  minWidth: 0,
-                  minHeight: 238,
-                  border: "1px solid #e8edf5",
-                  borderRadius: 18,
-                  padding: "16px 16px 12px",
-                  background: "#fff",
-                  boxShadow: "0 10px 26px rgba(15,23,42,.055)",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                  <div>
-                    <span style={{ fontSize: 11, fontWeight: 900, color: "#475569" }}>
-                      💵 Ciro Trendi
-                    </span>
-                    <strong
-                      style={{
-                        display: "block",
-                        marginTop: 7,
-                        fontSize: 23,
-                        color: "#172554",
-                      }}
-                    >
-                      {hasAnalysis && financeAvailable
-                        ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
-                        : "—"}
-                    </strong>
-                    <small style={{ color: "#94a3b8", fontWeight: 700 }}>
-                      {hasAnalysis && !financeAvailable
-                        ? "Finans verisi hesaplanamadı"
-                        : "Son 7 günlük görünüm"}
-                    </small>
-                  </div>
-                  <span style={{ color: "#7c3aed", fontWeight: 900 }}>→</span>
-                </div>
-
-                <div style={{ width: "100%", height: 125, marginTop: 9 }}>
-                  {financeAvailable && financeDailyRevenue.length ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={financeDailyRevenue}>
-                        <defs>
-                          <linearGradient id="miniRevenueFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#22c55e" stopOpacity={0.28} />
-                            <stop offset="100%" stopColor="#22c55e" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
-                        <Tooltip
-                          formatter={(value) =>
-                            `${Number(value ?? 0).toLocaleString("tr-TR")} ₺`
-                          }
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="value"
-                          stroke="#16a34a"
-                          strokeWidth={2.3}
-                          fill="url(#miniRevenueFill)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div
-                      style={{
-                        height: "100%",
-                        display: "grid",
-                        placeItems: "center",
-                        color: "#94a3b8",
-                        fontSize: 11,
-                        fontWeight: 700,
-                      }}
-                    >
-                      Analiz sonrası trend oluşacak
-                    </div>
-                  )}
-                </div>
-              </button>
-
-              <button
-                type="button"
+                className="dashboard-stock-risk-card"
                 onClick={() => navigateToOperation("risk")}
-                style={{
-                  minWidth: 0,
-                  minHeight: 238,
-                  border: "1px solid #e8edf5",
-                  borderRadius: 18,
-                  padding: "16px 16px 12px",
-                  background: "#fff",
-                  boxShadow: "0 10px 26px rgba(15,23,42,.055)",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <div className="dashboard-mini-card-head">
                   <div>
-                    <span style={{ fontSize: 11, fontWeight: 900, color: "#475569" }}>
-                      📦 Stok Risk Görünümü
-                    </span>
-                    <strong
-                      style={{
-                        display: "block",
-                        marginTop: 7,
-                        fontSize: 23,
-                        color: "#172554",
-                      }}
-                    >
-                      {totalRiskItems}
-                    </strong>
-                    <small style={{ color: "#94a3b8", fontWeight: 700 }}>
-                      Öne çıkan risk sinyalleri
-                    </small>
+                    <span>📦 Stok Risk Görünümü</span>
+                    <strong>{totalRiskItems}</strong>
+                    <small>Öne çıkan risk sinyalleri</small>
                   </div>
-                  <span style={{ color: "#7c3aed", fontWeight: 900 }}>→</span>
+                  <span className="dashboard-card-arrow">→</span>
                 </div>
-
-                <div style={{ width: "100%", height: 125, marginTop: 9 }}>
+                <div className="dashboard-stock-risk-chart">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={dashboardRiskChartData}>
                       <XAxis
@@ -2750,42 +2575,18 @@ export default function DashboardPage() {
 
               <button
                 type="button"
+                className="dashboard-patient-summary-card"
                 onClick={() => navigateToModule("👥 Hasta & Reçete")}
-                style={{
-                  minWidth: 0,
-                  minHeight: 238,
-                  border: "1px solid #e8edf5",
-                  borderRadius: 18,
-                  padding: "16px 16px 12px",
-                  background: "#fff",
-                  boxShadow: "0 10px 26px rgba(15,23,42,.055)",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                <div className="dashboard-mini-card-head">
                   <div>
-                    <span style={{ fontSize: 11, fontWeight: 900, color: "#475569" }}>
-                      👥 Hasta Segmentleri
-                    </span>
-                    <strong
-                      style={{
-                        display: "block",
-                        marginTop: 7,
-                        fontSize: 23,
-                        color: "#172554",
-                      }}
-                    >
-                      {hasAnalysis ? totalPatientCount.toLocaleString("tr-TR") : "-"}
-                    </strong>
-                    <small style={{ color: "#94a3b8", fontWeight: 700 }}>
-                      Toplam hasta
-                    </small>
+                    <span>👥 Hasta Segmentleri</span>
+                    <strong>{hasAnalysis ? totalPatientCount.toLocaleString("tr-TR") : "-"}</strong>
+                    <small>Toplam hasta</small>
                   </div>
-                  <span style={{ color: "#7c3aed", fontWeight: 900 }}>→</span>
+                  <span className="dashboard-card-arrow">→</span>
                 </div>
-
-                <div style={{ width: "100%", height: 125, marginTop: 9 }}>
+                <div className="dashboard-patient-summary-chart">
                   {dashboardPatientSegmentData.length ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -2794,7 +2595,7 @@ export default function DashboardPage() {
                           dataKey="value"
                           nameKey="name"
                           innerRadius={32}
-                          outerRadius={52}
+                          outerRadius={51}
                           paddingAngle={3}
                         >
                           {dashboardPatientSegmentData.map((_, index) => (
@@ -2805,34 +2606,94 @@ export default function DashboardPage() {
                           ))}
                         </Pie>
                         <Tooltip />
-                        <Legend
-                          verticalAlign="middle"
-                          align="right"
-                          layout="vertical"
-                          iconSize={8}
-                          wrapperStyle={{ fontSize: 9 }}
-                        />
+                        <Legend verticalAlign="middle" align="right" layout="vertical" iconSize={7} wrapperStyle={{ fontSize: 9 }} />
                       </PieChart>
                     </ResponsiveContainer>
                   ) : (
-                    <div
-                      style={{
-                        height: "100%",
-                        display: "grid",
-                        placeItems: "center",
-                        color: "#94a3b8",
-                        fontSize: 11,
-                        fontWeight: 700,
-                      }}
-                    >
-                      Analiz sonrası segmentler oluşacak
-                    </div>
+                    <div className="dashboard-trend-empty">Analiz sonrası segmentler oluşacak</div>
                   )}
                 </div>
               </button>
             </section>
 
-            <section className="dashboard-command-grid">
+            <section className="dashboard-dashboard-second-row">
+              <button
+                type="button"
+                className="dashboard-finance-trend-card dashboard-finance-trend-full"
+                onClick={() => navigateToModule("💰 Finans")}
+              >
+                <div className="dashboard-trend-head">
+                  <div>
+                    <span>FİNANSAL PERFORMANS</span>
+                    <h2>Ciro & Kâr Trendi</h2>
+                    <small>Son 7 günlük ciro ve kâr performansı</small>
+                  </div>
+                  <div className="dashboard-trend-legend">
+                    <span><i className="turnover-dot" /> Ciro</span>
+                    <span><i className="profit-dot" /> Kâr</span>
+                  </div>
+                </div>
+
+                <div className="dashboard-finance-trend-chart">
+                  {financeAvailable && financeDailyRevenue.length ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={financeDailyRevenue} margin={{ top: 12, right: 18, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="dashboardRevenueFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#0b5558" stopOpacity={0.18} />
+                            <stop offset="100%" stopColor="#0b5558" stopOpacity={0.02} />
+                          </linearGradient>
+                          <linearGradient id="dashboardProfitFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.13} />
+                            <stop offset="100%" stopColor="#14b8a6" stopOpacity={0.01} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e8eef3" />
+                        <XAxis
+                          dataKey="day"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#64748b", fontSize: 11 }}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#94a3b8", fontSize: 10 }}
+                          tickFormatter={(value) => `${Math.round(Number(value) / 1000)}K`}
+                        />
+                        <Tooltip
+                          formatter={(value, name) => [
+                            `${Number(value ?? 0).toLocaleString("tr-TR")} ₺`,
+                            name === "value" ? "Ciro" : "Kâr",
+                          ]}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="value"
+                          stroke="#0b5558"
+                          strokeWidth={3}
+                          fill="url(#dashboardRevenueFill)"
+                          activeDot={{ r: 5 }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="profit"
+                          stroke="#14b8a6"
+                          strokeWidth={2.2}
+                          fill="url(#dashboardProfitFill)"
+                          activeDot={{ r: 4 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="dashboard-trend-empty">Analiz sonrası trend oluşacak</div>
+                  )}
+                </div>
+              </button>
+
+            </section>
+
+            <section id="ayca-morning-briefing" className="dashboard-command-grid">
               <div className="insight-card command-card">
                 <div className="section-heading">
                   <div>
@@ -3009,58 +2870,7 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              <div className="insight-card quick-card rich-quick">
-                <div className="section-heading">
-                  <div>
-                    <span>HIZLI ERİŞİM</span>
-                    <h2>Çalışma Alanları</h2>
-                  </div>
-                </div>
-                <button onClick={() => navigateToModule("🤖 AYÇA Asistan")}>
-                  <span>🤖</span>
-                  <div>
-                    <b>AYÇA Asistan</b>
-                    <small>Veriye soru sor</small>
-                  </div>
-                  <em>→</em>
-                </button>
-                <button onClick={() => navigateToModule("📦 Operasyon")}>
-                  <span>📦</span>
-                  <div>
-                    <b>Operasyon</b>
-                    <small>Stok, sipariş ve risk</small>
-                  </div>
-                  <em>→</em>
-                </button>
-                <button onClick={() => navigateToModule("💰 Finans")}>
-                  <span>💰</span>
-                  <div>
-                    <b>Finans</b>
-                    <small>Ciro, kâr ve sermaye</small>
-                  </div>
-                  <em>→</em>
-                </button>
-                <button onClick={() => navigateToModule("👥 Hasta & Reçete")}>
-                  <span>👥</span>
-                  <div>
-                    <b>Hasta & Reçete</b>
-                    <small>Hasta, doktor ve reçete</small>
-                  </div>
-                  <em>→</em>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void downloadAnalysisReport()}
-                  disabled={!analyzeResult}
-                >
-                  <span>📊</span>
-                  <div>
-                    <b>Excel Raporu</b>
-                    <small>Analiz çıktısını dışa aktar</small>
-                  </div>
-                  <em>↓</em>
-                </button>
-              </div>
+
             </section>
           </>
         )}
@@ -3612,7 +3422,7 @@ export default function DashboardPage() {
 
                 <div className="finance-product-list">
                   {financeTopProducts.length > 0 ? (
-                    financeTopProducts.slice(0, 6).map((product, index) => (
+                    financeTopProducts.map((product, index) => (
                       <div className="finance-product-row" key={product.name}>
                         <b>{String(index + 1).padStart(2, "0")}</b>
                         <div>
@@ -3639,7 +3449,7 @@ export default function DashboardPage() {
 
                 <div className="finance-product-list">
                   {financeCapitalProducts.length > 0 ? (
-                    financeCapitalProducts.slice(0, 6).map((product, index) => (
+                    financeCapitalProducts.map((product, index) => (
                       <div className="finance-product-row" key={product.name}>
                         <b>{String(index + 1).padStart(2, "0")}</b>
                         <div>
@@ -3997,6 +3807,11 @@ export default function DashboardPage() {
                 <strong>{totalPatientCount || "-"}</strong>
                 <p>Analiz dönemindeki benzersiz hasta</p>
               </div>
+              <div className="insight-kpi patient-kpi patient-kpi-blue">
+                <span>🔵 Aktif Hasta</span>
+                <strong>{patientMetrics?.active_patient_count || "-"}</strong>
+                <p>Analiz döneminde aktif görünen hasta</p>
+              </div>
               <div className="insight-kpi patient-kpi patient-kpi-green">
                 <span>⭐ VIP Hasta</span>
                 <strong>{vipPatientCount || "-"}</strong>
@@ -4173,29 +3988,30 @@ export default function DashboardPage() {
                         </span>
                       )}
 
-                      <span
-                        className={
-                          showPatientNames
-                            ? "patient-live-badge patient-live-warning"
-                            : "patient-live-badge"
-                        }
-                      >
-                        {showPatientNames ? "İsimler görünür" : "KVKK maskeli"}
-                      </span>
-
-                      <button
-                        type="button"
-                        className={
-                          showPatientNames
-                            ? "patient-name-button patient-name-button-active"
-                            : "patient-name-button"
-                        }
-                        onClick={handlePatientNameVisibility}
-                      >
-                        {showPatientNames
-                          ? "🔒 İsimleri Gizle"
-                          : "👁️ Hasta İsimlerini Göster"}
-                      </button>
+                      <div className="patient-privacy-control">
+                        <div className="patient-privacy-copy">
+                          <span>{showPatientNames ? "İsimler görünür" : "KVKK maskeli"}</span>
+                          <small>Hasta adları</small>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={showPatientNames}
+                          aria-label={
+                            showPatientNames
+                              ? "Hasta isimlerini gizle"
+                              : "Hasta isimlerini göster"
+                          }
+                          className={
+                            showPatientNames
+                              ? "patient-privacy-switch is-on"
+                              : "patient-privacy-switch"
+                          }
+                          onClick={handlePatientNameVisibility}
+                        >
+                          <span aria-hidden="true" />
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -4506,7 +4322,6 @@ export default function DashboardPage() {
                           <th>Son Ziyaret</th>
                           <th>Ciro</th>
                           <th>Risk</th>
-                          <th></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4516,8 +4331,6 @@ export default function DashboardPage() {
                               ? patient.patient_name_full || patient.patient_name
                               : patient.patient_name;
 
-                            const patientLookupName =
-                              patient.patient_name_full || patient.patient_name;
 
                             return (
                               <tr key={`${patientLoyaltyTab}-${patient.patient_name}-${index}`}>
@@ -4546,44 +4359,13 @@ export default function DashboardPage() {
                                     {patient.risk_level ?? "-"}
                                   </span>
                                 </td>
-                                <td>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!showPatientNames) {
-                                        const approved = window.confirm(
-                                          "KVKK kapsamında hasta bilgileri hassas veridir.\n\nBu hastayı AYÇA Asistan bağlamına almak istediğinize emin misiniz?",
-                                        );
-                                        if (!approved) return;
-                                      }
 
-                                      setActivePatientContextName(patientLookupName);
-                                      setIsAssistantDrawerOpen(true);
-                                      void submitCopilotQuestion(
-                                        `${patientLookupName} hastasını özetle`,
-                                      );
-                                    }}
-                                    style={{
-                                      border: "1px solid #ddd6fe",
-                                      borderRadius: 10,
-                                      padding: "8px 10px",
-                                      background: "#f5f3ff",
-                                      color: "#6d28d9",
-                                      fontSize: 12,
-                                      fontWeight: 900,
-                                      cursor: "pointer",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    ✧ AYÇA'ya Sor
-                                  </button>
-                                </td>
                               </tr>
                             );
                           })
                         ) : (
                           <tr>
-                            <td colSpan={7}>
+                            <td colSpan={6}>
                               <div className="patient-empty">
                                 <b>Kayıt bulunamadı</b>
                                 <span>Arama kriterini, segmenti veya risk görünümünü değiştirin.</span>
@@ -4595,53 +4377,6 @@ export default function DashboardPage() {
                     </table>
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 8,
-                      marginTop: 16,
-                      paddingTop: 14,
-                      borderTop: "1px solid #eef2f7",
-                    }}
-                  >
-                    {[
-                      "En son ne zaman geldi?",
-                      "Kaç kere gelmiş?",
-                      "Toplam ne kadar alışveriş yapmış?",
-                      "Kayıp riski neden orta?",
-                      "Hangi doktorlardan reçete getirmiş?",
-                      "Son aldığı ilaçlar neler?",
-                      "Bu hastayı geri kazanmak için ne yapmalıyım?",
-                    ].map((question) => (
-                      <button
-                        key={question}
-                        type="button"
-                        disabled={!activePatientContextName}
-                        onClick={() => {
-                          setIsAssistantDrawerOpen(true);
-                          void submitCopilotQuestion(question);
-                        }}
-                        title={
-                          activePatientContextName
-                            ? "Seçili hasta için AYÇA'ya sor"
-                            : "Önce listeden bir hastayı AYÇA bağlamına alın"
-                        }
-                        style={{
-                          padding: "7px 10px",
-                          borderRadius: 999,
-                          background: activePatientContextName ? "#f8fafc" : "#f1f5f9",
-                          border: "1px solid #e2e8f0",
-                          color: activePatientContextName ? "#475569" : "#94a3b8",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: activePatientContextName ? "pointer" : "not-allowed",
-                        }}
-                      >
-                        {question}
-                      </button>
-                    ))}
-                  </div>
                 </section>
               )}
 
@@ -4711,7 +4446,6 @@ export default function DashboardPage() {
                 <>
                   <section className="prescription-grid">
                     {[
-                      ["Normal Reçete", "💊"],
                       ["Kırmızı Reçete", "🔴"],
                       ["Yeşil Reçete", "🟢"],
                       ["Mor Reçete", "🟣"],
@@ -4840,7 +4574,7 @@ export default function DashboardPage() {
                     type="button"
                     onClick={createTodayPlan}
                   >
-                    Bugünün planını oluştur
+                    Sabah Brifingini Aç
                   </button>
                   <button
                     type="button"
@@ -4871,39 +4605,6 @@ export default function DashboardPage() {
                 </small>
               </div>
             </section>
-
-            {decisionSummary && (
-              <section className="insight-card" style={{ marginBottom: 16 }}>
-                <div className="copilot-section-title">
-                  <div>
-                    <span>AYÇA DECISION ENGINE</span>
-                    <h2>Kararın Dayanağı</h2>
-                  </div>
-                  <b>{decisionSummary.priority_score}/100</b>
-                </div>
-                <div className="analysis-summary">
-                  <p>
-                    Öncelik: <strong>{decisionSummary.priority}</strong>
-                  </p>
-                  <p>
-                    Karar güveni:{" "}
-                    <strong>%{decisionSummary.confidence_score}</strong>
-                  </p>
-                  <p>
-                    Önerilen aksiyon:{" "}
-                    <strong>{decisionSummary.recommended_action}</strong>
-                  </p>
-                  <p>
-                    Sinyaller:{" "}
-                    <strong>
-                      {decisionSummary.reason_codes.length
-                        ? decisionSummary.reason_codes.join(" · ")
-                        : "Kritik karar sinyali yok"}
-                    </strong>
-                  </p>
-                </div>
-              </section>
-            )}
 
             <section className="copilot-kpi-grid">
               <div>
@@ -8574,9 +8275,209 @@ export default function DashboardPage() {
           }
         }
 
-      `}
+        /* Dashboard V2 — finance trend emphasis */
+        .dashboard-finance-kpis {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
 
+        .dashboard-finance-trend-card {
+          grid-column: span 2;
+        }
+
+        /* Dashboard lower area now has only data center + opportunity radar. */
+        .dashboard-lower-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        }
+
+        /* Finance lists keep the cards compact while allowing full exploration. */
+        .finance-product-list {
+          max-height: 310px;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          padding-right: 6px;
+          scrollbar-width: thin;
+          scrollbar-color: #cbd5e1 transparent;
+        }
+
+        .finance-product-list::-webkit-scrollbar {
+          width: 7px;
+        }
+
+        .finance-product-list::-webkit-scrollbar-thumb {
+          border-radius: 999px;
+          background: #cbd5e1;
+        }
+
+        .finance-product-list::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        /* Patient privacy control — compact, intentional KVKK switch. */
+        .patient-privacy-control {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 7px 9px 7px 12px;
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          background: #fff;
+          box-shadow: 0 5px 16px rgba(15, 23, 42, .05);
+        }
+
+        .patient-privacy-copy {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          min-width: 92px;
+        }
+
+        .patient-privacy-copy span {
+          color: #6d28d9;
+          font-size: 10px;
+          font-weight: 900;
+          line-height: 1.2;
+        }
+
+        .patient-privacy-copy small {
+          color: #64748b;
+          font-size: 10px;
+          font-weight: 700;
+          line-height: 1.2;
+        }
+
+        .patient-privacy-switch {
+          position: relative;
+          width: 42px;
+          height: 24px;
+          flex: 0 0 42px;
+          padding: 0;
+          border: 0;
+          border-radius: 999px;
+          background: #cbd5e1;
+          cursor: pointer;
+          transition: background 160ms ease, box-shadow 160ms ease;
+        }
+
+        .patient-privacy-switch > span {
+          position: absolute;
+          top: 3px;
+          left: 3px;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #fff;
+          box-shadow: 0 2px 6px rgba(15, 23, 42, .2);
+          transition: transform 160ms ease;
+        }
+
+        .patient-privacy-switch.is-on {
+          background: #7c3aed;
+          box-shadow: 0 0 0 3px rgba(124, 58, 237, .10);
+        }
+
+        .patient-privacy-switch.is-on > span {
+          transform: translateX(18px);
+        }
+
+        @media (max-width: 1050px) {
+          .dashboard-finance-trend-card {
+            grid-column: auto !important;
+          }
+
+          .dashboard-lower-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .dashboard-finance-kpis {
+            grid-template-columns: 1fr !important;
+          }
+
+          .patient-privacy-control {
+            width: max-content;
+            max-width: 100%;
+          }
+        }
+
+        /* Dashboard V5 — 4-up summary, full-width trend */
+        .dashboard-finance-summary-grid {
+          display:grid;
+          grid-template-columns:repeat(4,minmax(0,1fr));
+          gap:16px;
+          margin-bottom:18px;
+          align-items:stretch;
+        }
+        .dashboard-finance-compact-kpi { min-height:174px !important; padding:18px 22px !important; }
+        .dashboard-finance-compact-kpi > strong { font-size:clamp(26px,2vw,36px) !important; line-height:1.05 !important; margin-bottom:8px !important; }
+        .dashboard-stock-risk-card,.dashboard-patient-summary-card,.dashboard-finance-trend-full {
+          min-width:0; border:1px solid #e8edf5; border-radius:22px; background:#fff;
+          box-shadow:0 10px 26px rgba(15,23,42,.055); text-align:left; cursor:pointer;
+        }
+        .dashboard-stock-risk-card,.dashboard-patient-summary-card {
+          min-height:174px; padding:14px 16px 10px; display:flex; flex-direction:column; gap:4px;
+        }
+        .dashboard-mini-card-head { display:flex; justify-content:space-between; gap:10px; min-width:0; }
+        .dashboard-mini-card-head > div { min-width:0; }
+        .dashboard-mini-card-head > div > span { display:block; font-size:12px; font-weight:900; color:#475569; }
+        .dashboard-mini-card-head strong { display:block; margin-top:7px; font-size:25px; color:#172554; line-height:1; }
+        .dashboard-mini-card-head small { display:block; margin-top:6px; color:#94a3b8; font-weight:700; }
+        .dashboard-card-arrow { color:#7c3aed; font-weight:900; }
+        .dashboard-stock-risk-chart,.dashboard-patient-summary-chart { width:100%; height:108px; margin-top:auto; }
+        .dashboard-dashboard-second-row { display:grid; grid-template-columns:1fr; gap:16px; margin-bottom:18px; }
+        .dashboard-finance-trend-full { width:100%; min-height:410px; padding:22px 24px 18px; }
+        .dashboard-trend-head { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; margin-bottom:8px; }
+        .dashboard-trend-head > div:first-child > span { display:block; color:#0f766e; font-size:10px; font-weight:950; letter-spacing:.08em; }
+        .dashboard-trend-head h2 { margin:7px 0 4px; color:#172554; font-size:23px; line-height:1.1; }
+        .dashboard-trend-head small { color:#94a3b8; font-weight:700; }
+        .dashboard-trend-legend { display:inline-flex; gap:16px; align-items:center; color:#64748b; font-size:11px; font-weight:800; }
+        .dashboard-trend-legend span { display:inline-flex; align-items:center; gap:6px; }
+        .dashboard-trend-legend i { width:9px; height:9px; border-radius:50%; display:inline-block; }
+        .dashboard-trend-legend .turnover-dot { background:#0b5558; }
+        .dashboard-trend-legend .profit-dot { background:#14b8a6; }
+        .dashboard-finance-trend-chart { width:100%; height:318px; margin-top:10px; }
+        .dashboard-trend-empty { height:100%; display:grid; place-items:center; color:#94a3b8; font-size:12px; font-weight:700; }
+
+        /* Patient & Prescription V2 — balanced 4/3 KPI layout */
+        .patient-kpi-grid {
+          display:grid !important;
+          grid-template-columns:repeat(8,minmax(0,1fr)) !important;
+          gap:16px !important;
+        }
+        .patient-kpi-grid > .patient-kpi { grid-column:span 2; min-width:0; }
+        .patient-kpi-grid > .patient-kpi:nth-child(5) { grid-column:2 / span 2; }
+        .prescription-grid {
+          display:grid !important;
+          grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+          gap:14px !important;
+        }
+
+        @media (max-width:1180px) {
+          .dashboard-finance-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+          .patient-kpi-grid { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+          .patient-kpi-grid > .patient-kpi { grid-column:span 2; }
+          .patient-kpi-grid > .patient-kpi:nth-child(5) { grid-column:auto / span 2; }
+          .patient-kpi-grid > .patient-kpi:nth-child(7) { grid-column:2 / span 2; }
+          .prescription-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:900px) {
+          .dashboard-finance-summary-grid { grid-template-columns:1fr 1fr; }
+        }
+        @media (max-width:760px) {
+          .dashboard-finance-summary-grid { grid-template-columns:1fr; gap:12px; }
+          .dashboard-finance-trend-full { min-height:330px; padding:18px 14px 12px; }
+          .dashboard-finance-trend-chart { height:235px; }
+          .dashboard-trend-head { flex-direction:column; }
+          .patient-kpi-grid { grid-template-columns:1fr !important; }
+          .patient-kpi-grid > .patient-kpi,
+          .patient-kpi-grid > .patient-kpi:nth-child(5),
+          .patient-kpi-grid > .patient-kpi:nth-child(7) { grid-column:auto !important; }
+          .prescription-grid { grid-template-columns:1fr !important; }
+        }
+      `}
       </style>
     </main>
   );
 }
+
+export default DashboardPage;
