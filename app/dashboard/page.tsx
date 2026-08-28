@@ -1173,6 +1173,7 @@ export default function DashboardPage() {
   const financeDailyRevenue = selectedFinanceDailyRevenue.map((item) => ({
     day: item.label,
     value: item.revenue,
+    profit: item.profit ?? 0,
   }));
 
   const maximumFinanceRevenue = Math.max(
@@ -2897,54 +2898,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="insight-card pulse-card">
-                <div className="section-heading">
-                  <div>
-                    <span>OPERASYON NABZI</span>
-                    <h2>Risk Dağılımı</h2>
-                  </div>
-                </div>
-                <div className="pulse-row">
-                  <span>Kritik stok</span>
-                  <strong>{metrics?.critical_stock_count ?? 0}</strong>
-                  <i>
-                    <em
-                      style={{
-                        width: `${Math.min(100, (metrics?.critical_stock_count ?? 0) * 8)}%`,
-                      }}
-                    />
-                  </i>
-                </div>
-                <div className="pulse-row">
-                  <span>Fazla stok</span>
-                  <strong>{overStockCount ?? 0}</strong>
-                  <i>
-                    <em
-                      style={{
-                        width: `${Math.min(100, (overStockCount ?? 0) * 5)}%`,
-                      }}
-                    />
-                  </i>
-                </div>
-                <div className="pulse-row">
-                  <span>Sipariş fırsatı</span>
-                  <strong>{suggestionCount}</strong>
-                  <i>
-                    <em
-                      style={{
-                        width: `${Math.min(100, suggestionCount * 5)}%`,
-                      }}
-                    />
-                  </i>
-                </div>
-                <div className="manager-note">
-                  <b>Yönetici yorumu</b>
-                  <p>
-                    {morningBriefing?.result ??
-                      "Analiz tamamlandığında stok dengesi, nakit etkisi ve öncelikli aksiyon özeti burada oluşacak."}
-                  </p>
-                </div>
-              </div>
             </section>
 
             <section className="dashboard-lower-grid">
@@ -3116,8 +3069,8 @@ export default function DashboardPage() {
           <section className="operation-tab-shell">
             <div className="operation-tabs" role="tablist" aria-label="Operasyon bölümleri">
               {[
-                ["stock", "📦 Sipariş & Stok"],
-                ["risk", "🚨 Risk"],
+                ["stock", "✦ Sipariş Önerileri"],
+                ["risk", "🚨 Risk Merkezi"],
                 ["runout", "⏱️ Stok Bitiş"],
                 ["dead", "💀 Fazla / Ölü Stok"],
               ].map(([key, label]) => (
@@ -3135,59 +3088,204 @@ export default function DashboardPage() {
         )}
 
         {activeModule === "📦 Operasyon" && operationTab === "stock" && (
-          <section className="insight-card">
-            <p>Stok ve sipariş önerileriniz.</p>
-
-            <section className="insight-kpi-grid">
-              <div className="insight-kpi">
-                <span>Öneri Sayısı</span>
-                <strong>{suggestionCount}</strong>
+          <section className="order-center">
+            <header className="order-center-hero">
+              <div>
+                <span className="order-center-kicker">AYÇA SİPARİŞ MERKEZİ</span>
+                <h2>
+                  {hasAnalysis
+                    ? `Bugün ${suggestionCount} ürün için sipariş önerisi var`
+                    : "Sipariş önerileri analizden sonra oluşacak"}
+                </h2>
+                <p>
+                  AYÇA satış hızını, mevcut stoğu ve hedef stok seviyesini
+                  birlikte değerlendirerek önerileri önceliklendirir.
+                </p>
               </div>
 
-              <div className="insight-kpi">
-                <span>Sipariş Bütçesi</span>
+              <div className="order-center-budget">
+                <span>TAHMİNİ SİPARİŞ BÜTÇESİ</span>
                 <strong>
                   {estimatedOrderAmount
                     ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
-                    : "-"}
+                    : "—"}
                 </strong>
+                <small>
+                  {orderSuggestions.length
+                    ? `${orderSuggestions.reduce(
+                        (sum, item) => sum + (item["Önerilen Sipariş"] ?? 0),
+                        0,
+                      ).toLocaleString("tr-TR")} adet toplam öneri`
+                    : "Analiz bekleniyor"}
+                </small>
               </div>
+            </header>
 
-              <div className="insight-kpi">
-                <span>Kritik Stok</span>
-                <strong>{metrics?.critical_stock_count ?? "-"}</strong>
+            <section className="ayca-decision-card">
+              <div className="ayca-decision-mark">✦</div>
+              <div className="ayca-decision-content">
+                <span>AYÇA ÖNERİYOR · SİPARİŞ</span>
+                <strong>
+                  {orderSuggestions.length > 0
+                    ? `${orderSuggestions.length} ürün için satın alma planını önceliklendir.`
+                    : "Sipariş kararı için analiz bekleniyor."}
+                </strong>
+                <p>
+                  {orderSuggestions.length > 0
+                    ? `Satış hızı ve hedef stok seviyesine göre yaklaşık ${
+                        estimatedOrderAmount
+                          ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
+                          : "hesaplanan"
+                      } bütçelik sipariş ihtiyacı oluştu. Önce yüksek öncelikli ürünleri değerlendir.`
+                    : "Analiz tamamlandığında AYÇA neyi, neden ve ne kadar sipariş etmeniz gerektiğini burada özetleyecek."}
+                </p>
               </div>
-
-              <div className="insight-kpi">
-                <span>Fazla Stok</span>
-                <strong>{overStockCount ?? "-"}</strong>
-              </div>
+              <button type="button" onClick={() => setIsAssistantDrawerOpen(true)}>
+                AYÇA’ya sor <span>→</span>
+              </button>
             </section>
 
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Öncelik</th>
-                    <th>Ürün</th>
-                    <th>Stok</th>
-                    <th>Satış</th>
-                    <th>Sipariş</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orderSuggestions.map((item, index) => (
-                    <tr key={index}>
-                      <td>{item["Öncelik"]}</td>
-                      <td>{item["Ürün Adı"]}</td>
-                      <td>{item.Stok}</td>
-                      <td>{item["Satılan Adet"]}</td>
-                      <td>{item["Önerilen Sipariş"]}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="order-center-summary">
+              <div>
+                <span>ACİL / YÜKSEK</span>
+                <strong>
+                  {
+                    orderSuggestions.filter((item) =>
+                      ["acil", "yüksek", "kritik", "high", "critical"].some(
+                        (level) =>
+                          String(item["Öncelik"] ?? "")
+                            .toLocaleLowerCase("tr-TR")
+                            .includes(level),
+                      ),
+                    ).length
+                  }
+                </strong>
+                <small>Önce değerlendirilmesi gereken</small>
+              </div>
+
+              <div>
+                <span>KRİTİK STOK</span>
+                <strong>{criticalStockCount}</strong>
+                <small>Stok riski taşıyan ürün</small>
+              </div>
+
+              <div>
+                <span>ORT. ÖNERİ TUTARI</span>
+                <strong>
+                  {orderSuggestions.length && estimatedOrderAmount
+                    ? `${Math.round(
+                        estimatedOrderAmount / orderSuggestions.length,
+                      ).toLocaleString("tr-TR")} ₺`
+                    : "—"}
+                </strong>
+                <small>Ürün başına tahmini bütçe</small>
+              </div>
+
+              <div>
+                <span>FAZLA STOK</span>
+                <strong>{overStockCount ?? "—"}</strong>
+                <small>Yeni sipariş öncesi kontrol</small>
+              </div>
             </div>
+
+            <div className="order-center-heading">
+              <div>
+                <h3>Önerilen Siparişler</h3>
+                <p>En yüksek öncelikten başlayarak listelenir.</p>
+              </div>
+              <span>{orderSuggestions.length} ürün</span>
+            </div>
+
+            {orderSuggestions.length ? (
+              <div className="order-center-list">
+                {orderSuggestions.map((item, index) => {
+                  const priority = String(item["Öncelik"] ?? "Orta");
+                  const priorityKey = priority
+                    .toLocaleLowerCase("tr-TR")
+                    .replaceAll("ı", "i")
+                    .replaceAll("ş", "s")
+                    .replaceAll("ğ", "g")
+                    .replaceAll("ü", "u")
+                    .replaceAll("ö", "o")
+                    .replaceAll("ç", "c")
+                    .replace(/[^a-z0-9]+/g, "-");
+
+                  return (
+                    <article
+                      className={`order-recommendation priority-${priorityKey}`}
+                      key={`${item["Ürün Adı"]}-${index}`}
+                    >
+                      <div className="order-priority-column">
+                        <span className="order-index">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <span className="order-priority-pill">{priority}</span>
+                      </div>
+
+                      <div className="order-product-column">
+                        <strong>{item["Ürün Adı"]}</strong>
+                        <div className="order-product-metrics">
+                          <span>
+                            <small>MEVCUT STOK</small>
+                            <b>{item.Stok}</b>
+                          </span>
+                          <span>
+                            <small>DÖNEM SATIŞI</small>
+                            <b>{item["Satılan Adet"]}</b>
+                          </span>
+                          <span>
+                            <small>GÜNLÜK TÜKETİM</small>
+                            <b>
+                              {item["Günlük Tüketim"] != null
+                                ? Number(item["Günlük Tüketim"]).toLocaleString(
+                                    "tr-TR",
+                                    { maximumFractionDigits: 1 },
+                                  )
+                                : "—"}
+                            </b>
+                          </span>
+                          <span>
+                            <small>STOK SÜRESİ</small>
+                            <b>
+                              {item["Stok Gün Karşılığı"] != null
+                                ? `${Math.round(
+                                    Number(item["Stok Gün Karşılığı"]),
+                                  )} gün`
+                                : "—"}
+                            </b>
+                          </span>
+                          <span>
+                            <small>HEDEF STOK</small>
+                            <b>{item["Hedef Stok"] ?? "—"}</b>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="order-result-column">
+                        <span>AYÇA ÖNERİSİ</span>
+                        <strong>{item["Önerilen Sipariş"]} adet</strong>
+                        <small>
+                          {item["Tahmini Sipariş Tutarı"] != null
+                            ? `${Number(
+                                item["Tahmini Sipariş Tutarı"],
+                              ).toLocaleString("tr-TR")} ₺`
+                            : "Tutar hesaplanamadı"}
+                        </small>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="order-center-empty">
+                <span>✦</span>
+                <strong>Henüz sipariş önerisi yok</strong>
+                <p>
+                  Analiz tamamlandığında AYÇA ürünleri satış hızı ve stok
+                  ihtiyacına göre burada sıralayacak.
+                </p>
+              </div>
+            )}
           </section>
         )}
 
@@ -3231,6 +3329,26 @@ export default function DashboardPage() {
                 <strong>Stok / Günlük Tüketim</strong>
                 <p>Analiz dönemindeki satış hızına göre</p>
               </div>
+            </section>
+
+            <section className="ayca-decision-card">
+              <div className="ayca-decision-mark">✦</div>
+              <div className="ayca-decision-content">
+                <span>AYÇA ÖNERİYOR · STOK BİTİŞ</span>
+                <strong>
+                  {stockRunoutProducts.length > 0
+                    ? `${stockRunoutProducts.filter((item) => item.estimated_runout_days <= 7).length} ürünü bugün kontrol et.`
+                    : "Yakın dönem stok bitiş riski görünmüyor."}
+                </strong>
+                <p>
+                  {stockRunoutProducts.length > 0
+                    ? `En yakın stok bitişi ${Math.min(...stockRunoutProducts.map((item) => item.estimated_runout_days))} gün. Satış kaybını önlemek için en kısa stok süresine sahip ürünlerden başla.`
+                    : "Satış hızı ve mevcut stok birlikte değerlendirildiğinde acil aksiyon gerektiren ürün bulunmadı."}
+                </p>
+              </div>
+              <button type="button" onClick={() => setIsAssistantDrawerOpen(true)}>
+                Nedenini sor <span>→</span>
+              </button>
             </section>
 
             <section className="insight-card">
@@ -3290,12 +3408,32 @@ export default function DashboardPage() {
                 <span>💸 Bağlı Sermaye</span><strong>{deadStockValue.toLocaleString("tr-TR")} ₺</strong><p>Hareketsiz stoktaki tahmini değer</p>
               </div>
             </section>
+            <section className="ayca-decision-card">
+              <div className="ayca-decision-mark">✦</div>
+              <div className="ayca-decision-content">
+                <span>AYÇA ÖNERİYOR · SERMAYE</span>
+                <strong>
+                  {deadStockCount > 0
+                    ? `${deadStockCount} hareketsiz üründe bağlı sermayeyi azalt.`
+                    : "Hareketsiz stok için acil aksiyon görünmüyor."}
+                </strong>
+                <p>
+                  {deadStockCount > 0
+                    ? `${deadStockValue.toLocaleString("tr-TR")} ₺ değerindeki ölü stok için iade, transfer veya satış hızlandırma seçeneklerini ürün bazında değerlendir.`
+                    : "Analiz döneminde satış hareketi olmayan anlamlı bir stok kümesi tespit edilmedi."}
+                </p>
+              </div>
+              <button type="button" onClick={() => setIsAssistantDrawerOpen(true)}>
+                Plan oluştur <span>→</span>
+              </button>
+            </section>
+
             <section className="insight-card">
               <h2>💀 Ölü / Hareketsiz Stok Listesi</h2>
               <p>Stokta olup analiz döneminde satış hareketi görülmeyen ürünler.</p>
               <div className="table-wrapper">
                 <table>
-                  <thead><tr><th>Ürün</th><th>Stok</th><th>Dönem Satışı</th><th>Stok Değeri</th><th>Önerilen Aksiyon</th></tr></thead>
+                  <thead><tr><th>Ürün</th><th>Stok</th><th>Dönem Satışı</th><th>Stok Değeri</th><th>✦ AYÇA Aksiyonu</th></tr></thead>
                   <tbody>
                     {deadStockProducts.length > 0 ? deadStockProducts.map((item, index) => (
                       <tr key={`${item.product_name}-${index}`}><td>{item.product_name}</td><td>{item.stock}</td><td>{item.sold_quantity}</td><td>{item.stock_value.toLocaleString("tr-TR")} ₺</td><td>{item.recommended_action}</td></tr>
@@ -3309,344 +3447,235 @@ export default function DashboardPage() {
 
         {activeModule === "💰 Finans" && (
           <>
-            <section className="insight-kpi-grid">
-              <div
-                className="insight-kpi finance-kpi"
-                role="button"
-                tabIndex={0}
-                aria-label="Toplam ciro detayını aç"
+            <section className="finance-premium-kpis">
+              <button
+                type="button"
+                className="finance-premium-kpi"
                 onClick={() => setIsTurnoverDetailOpen(true)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setIsTurnoverDetailOpen(true);
-                  }
-                }}
-                style={{ cursor: "pointer", position: "relative" }}
                 title="SGK ve nakit ciro detayını gör"
               >
-                <span>💰 Toplam Ciro</span>
+                <span>TOPLAM CİRO</span>
                 <strong>
                   {financeAvailable && analyzeResult?.finance_metrics?.success
                     ? `${totalTurnover.toLocaleString("tr-TR")} ₺`
                     : "—"}
                 </strong>
-                <p>Analiz dönemindeki toplam satış</p>
-                <small
-                  style={{
-                    display: "inline-block",
-                    marginTop: 6,
-                    fontSize: 10,
-                    fontWeight: 850,
-                    color: "#0f8a6c",
-                  }}
-                >
-                  Detayı gör →
-                </small>
-              </div>
+                <p>{financePeriodLabel} toplam satış</p>
+                <em>Detayı gör →</em>
+              </button>
 
-              <div className="insight-kpi finance-kpi">
-                <span>🧾 İşlem Sayısı</span>
+              <div className="finance-premium-kpi">
+                <span>BRÜT KÂR</span>
                 <strong>
-                  {morningBriefing
-                    ? morningBriefing.summary.transaction_count.toLocaleString(
-                        "tr-TR",
-                      )
-                    : "-"}
+                  {financeAvailable && analyzeResult?.finance_metrics?.success
+                    ? `${totalProfit.toLocaleString("tr-TR")} ₺`
+                    : "—"}
                 </strong>
-                <p>Toplam satış işlemi</p>
+                <p>Doğrulanmış dönem kârı</p>
               </div>
 
-              <div className="insight-kpi finance-kpi">
-                <span>🛒 Ortalama Sepet</span>
+              <div className="finance-premium-kpi">
+                <span>KÂR MARJI</span>
                 <strong>
-                  {morningBriefing
-                    ? `${morningBriefing.summary.average_sale.toLocaleString(
-                        "tr-TR",
-                      )} ₺`
-                    : "-"}
+                  {financeAvailable && analyzeResult?.finance_metrics?.success
+                    ? `%${profitMargin.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}`
+                    : "—"}
                 </strong>
-                <p>İşlem başına ortalama satış</p>
+                <p>Ciro içindeki kâr oranı</p>
+                <div className="finance-margin-line">
+                  <i style={{ width: `${Math.max(4, Math.min(100, profitMargin))}%` }} />
+                </div>
               </div>
 
-              <div className="insight-kpi finance-kpi">
-                <span>📈 Sipariş Bütçesi</span>
+              <div className="finance-premium-kpi">
+                <span>SİPARİŞ SERMAYESİ</span>
                 <strong>
                   {estimatedOrderAmount
                     ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
-                    : "-"}
+                    : "—"}
                 </strong>
-                <p>Önerilen sipariş sermayesi</p>
+                <p>Önerilen sipariş bütçesi</p>
               </div>
             </section>
 
-            <section className="insight-main-grid">
-              <div className="insight-card">
-                <h2>💚 Finansal Performans</h2>
-
-                <h1 className="finance-score">
-                  {analyzeResult?.finance_metrics?.success
-                    ? `%${profitMargin.toLocaleString("tr-TR")}`
-                    : "-"}
-                </h1>
-
-                <p>Kâr Marjı</p>
+            <section className="ayca-decision-card finance-ayca-decision">
+              <div className="ayca-decision-mark">✦</div>
+              <div className="ayca-decision-content">
+                <span>AYÇA FİNANS YORUMU</span>
+                <strong>
+                  {!hasAnalysis
+                    ? "Finansal karar için analiz bekleniyor."
+                    : profitMargin < 15
+                      ? `Kâr marjı %${profitMargin.toLocaleString("tr-TR", { maximumFractionDigits: 1 })}; marj baskısını öncelikli incele.`
+                      : (overStockCount ?? 0) > 0
+                        ? `${overStockCount} ürün sermaye bağlıyor; nakit verimliliğini artırmak için fazla stoğu azalt.`
+                        : "Finansal görünüm dengeli; kârlı ürünlerin payını korumaya odaklan."}
+                </strong>
                 <p>
-                  {analyzeResult?.finance_metrics?.success
-                    ? `Toplam ciro ${totalTurnover.toLocaleString("tr-TR")} ₺ · Kâr ${totalProfit.toLocaleString("tr-TR")} ₺`
-                    : "Finans verisi doğrulanamadı."}
+                  {!hasAnalysis
+                    ? "Analiz tamamlandığında AYÇA ciro, kâr, marj, stok sermayesi ve sipariş bütçesini birlikte yorumlayacak."
+                    : `${financePeriodLabel} cirosu ${totalTurnover.toLocaleString("tr-TR")} ₺ ve doğrulanmış kâr ${totalProfit.toLocaleString("tr-TR")} ₺. ${
+                        estimatedOrderAmount
+                          ? `Planlanan sipariş bütçesi ${estimatedOrderAmount.toLocaleString("tr-TR")} ₺.`
+                          : ""
+                      }`}
                 </p>
               </div>
-
-              <div className="insight-card">
-                <h2>💸 Sermaye Durumu</h2>
-
-                <div className="analysis-summary">
-                  <p>
-                    Fazla stoklu ürün: <strong>{overStockCount ?? "-"}</strong>
-                  </p>
-
-                  <p>
-                    Kritik stoklu ürün:{" "}
-                    <strong>{metrics?.critical_stock_count ?? "-"}</strong>
-                  </p>
-
-                  <p>
-                    Veri güveni:{" "}
-                    <strong>%{analysisConfidenceScore}</strong>
-                  </p>
-
-                  <p>
-                    Sipariş bütçesi:{" "}
-                    <strong>
-                      {estimatedOrderAmount
-                        ? `${estimatedOrderAmount.toLocaleString("tr-TR")} ₺`
-                        : "-"}
-                    </strong>
-                  </p>
-                </div>
-              </div>
+              <button type="button" onClick={() => setIsAssistantDrawerOpen(true)}>
+                Finansını yorumla <span>→</span>
+              </button>
             </section>
 
-            <section className="insight-card">
-              <h2>📊 Günlük Ciro Dağılımı</h2>
-              <p>{financePeriodDateLabel} · günlük gerçek satış performansı</p>
+            <section className="finance-premium-chart-card">
+              <div className="finance-premium-section-head">
+                <div>
+                  <span>FİNANSAL PERFORMANS</span>
+                  <h2>Ciro & Kâr Trendi</h2>
+                  <p>{financePeriodDateLabel} · gerçek satış performansı</p>
+                </div>
+                <div className="finance-chart-legend">
+                  <span><i className="revenue-dot" /> Ciro</span>
+                  <span><i className="profit-dot" /> Kâr</span>
+                </div>
+              </div>
 
-              <div className="ayca-chart-shell ayca-chart-large">
+              <div className="ayca-chart-shell ayca-chart-large finance-premium-chart">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={financeDailyRevenue}
                     margin={{ top: 18, right: 18, left: 0, bottom: 0 }}
                   >
                     <defs>
-                      <linearGradient
-                        id="financeRevenueGradient"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stopColor="#10b981"
-                          stopOpacity={0.34}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor="#10b981"
-                          stopOpacity={0.03}
-                        />
+                      <linearGradient id="financeRevenueGradientPremium" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0b5558" stopOpacity={0.22} />
+                        <stop offset="95%" stopColor="#0b5558" stopOpacity={0.015} />
+                      </linearGradient>
+                      <linearGradient id="financeProfitGradientPremium" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.16} />
+                        <stop offset="95%" stopColor="#14b8a6" stopOpacity={0.01} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid
-                      strokeDasharray="4 4"
-                      vertical={false}
-                      stroke="#e2e8f0"
-                    />
+                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e8eef2" />
                     <XAxis
                       dataKey="day"
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: "#64748b", fontSize: 12 }}
+                      tick={{ fill: "#64748b", fontSize: 11 }}
                     />
                     <YAxis
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      tickFormatter={(value) =>
-                        `${Math.round(Number(value) / 1000)}K`
-                      }
+                      tick={{ fill: "#94a3b8", fontSize: 10 }}
+                      tickFormatter={(value) => `${Math.round(Number(value) / 1000)}K`}
                     />
                     <Tooltip
                       contentStyle={{
                         borderRadius: 14,
-                        border: "1px solid #dbeafe",
-                        boxShadow: "0 14px 30px rgba(15,23,42,.12)",
+                        border: "1px solid #dbe5e7",
+                        boxShadow: "0 14px 30px rgba(15,23,42,.10)",
                       }}
-                      formatter={(value) => [
+                      formatter={(value, name) => [
                         `${Number(value).toLocaleString("tr-TR")} ₺`,
-                        "Ciro",
+                        name === "value" ? "Ciro" : "Kâr",
                       ]}
                     />
                     <Area
                       type="monotone"
                       dataKey="value"
-                      stroke="#059669"
+                      stroke="#0b5558"
                       strokeWidth={3}
-                      fill="url(#financeRevenueGradient)"
-                      activeDot={{ r: 6 }}
+                      fill="url(#financeRevenueGradientPremium)"
+                      activeDot={{ r: 5 }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="profit"
+                      stroke="#14b8a6"
+                      strokeWidth={2}
+                      fill="url(#financeProfitGradientPremium)"
+                      activeDot={{ r: 4 }}
                     />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             </section>
 
-            <section className="insight-main-grid">
-              <div className="insight-card">
-                <h2>🏆 En Karlı Ürünler</h2>
+            <section className="finance-premium-bottom-grid">
+              <div className="finance-premium-panel">
+                <div className="finance-premium-section-head compact">
+                  <div>
+                    <span>KÂRLILIK</span>
+                    <h2>En Karlı Ürünler</h2>
+                    <p>Gerçek kâr katkısı en yüksek ürünler</p>
+                  </div>
+                </div>
 
-                <div className="table-wrapper">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Ürün</th>
-                        <th>Satış</th>
-                        <th>Gerçek Kâr</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {financeTopProducts.length > 0 ? (
-                        financeTopProducts.map((product) => (
-                          <tr key={product.name}>
-                            <td>{product.name}</td>
-                            <td>{product.sales}</td>
-                            <td>{product.profit.toLocaleString("tr-TR")} ₺</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={3}>
-                            Analiz sonrası gerçek ürün verileri burada
-                            görünecek.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                <div className="finance-product-list">
+                  {financeTopProducts.length > 0 ? (
+                    financeTopProducts.slice(0, 6).map((product, index) => (
+                      <div className="finance-product-row" key={product.name}>
+                        <b>{String(index + 1).padStart(2, "0")}</b>
+                        <div>
+                          <strong>{product.name}</strong>
+                          <small>{product.sales} adet satış</small>
+                        </div>
+                        <span>{product.profit.toLocaleString("tr-TR")} ₺</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="finance-empty">Analiz sonrası ürün kârlılığı burada görünecek.</div>
+                  )}
                 </div>
               </div>
 
-              <div className="insight-card">
-                <h2>💸 Sermaye Bağlayan Ürünler</h2>
+              <div className="finance-premium-panel">
+                <div className="finance-premium-section-head compact">
+                  <div>
+                    <span>SERMAYE</span>
+                    <h2>Sermaye Bağlayan Ürünler</h2>
+                    <p>Stokta en fazla kaynak tutan ürünler</p>
+                  </div>
+                </div>
 
-                <div className="table-wrapper">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Ürün</th>
-                        <th>Stok</th>
-                        <th>Stok Değeri</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {financeCapitalProducts.length > 0 ? (
-                        financeCapitalProducts.map((product) => (
-                          <tr key={product.name}>
-                            <td>{product.name}</td>
-                            <td>{product.stock}</td>
-                            <td>{product.value.toLocaleString("tr-TR")} ₺</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={3}>
-                            Sermaye bağlayan gerçek ürün bulunamadı.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                <div className="finance-product-list">
+                  {financeCapitalProducts.length > 0 ? (
+                    financeCapitalProducts.slice(0, 6).map((product, index) => (
+                      <div className="finance-product-row" key={product.name}>
+                        <b>{String(index + 1).padStart(2, "0")}</b>
+                        <div>
+                          <strong>{product.name}</strong>
+                          <small>{product.stock} adet stok</small>
+                        </div>
+                        <span>{product.value.toLocaleString("tr-TR")} ₺</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="finance-empty">Sermaye bağlayan ürün bulunamadı.</div>
+                  )}
                 </div>
               </div>
             </section>
 
-            <section className="insight-card finance-ai-card">
-              <h2>🤖 AYÇA Finans Yorumu</h2>
-
-              {morningBriefing ? (
-                <div className="analysis-summary">
-                  <p>
-                    Son analiz döneminde eczanenizin toplam cirosu{" "}
-                    <strong>
-                      {morningBriefing.summary.total_turnover.toLocaleString(
-                        "tr-TR",
-                      )}{" "}
-                      ₺
-                    </strong>{" "}
-                    olarak gerçekleşti.
-                  </p>
-
-                  <p>
-                    Ortalama sepet tutarı{" "}
-                    <strong>
-                      {morningBriefing.summary.average_sale.toLocaleString(
-                        "tr-TR",
-                      )}{" "}
-                      ₺
-                    </strong>{" "}
-                    seviyesinde.
-                  </p>
-
-                  <p>
-                    Toplam{" "}
-                    <strong>
-                      {morningBriefing.summary.transaction_count.toLocaleString(
-                        "tr-TR",
-                      )}
-                    </strong>{" "}
-                    satış işlemi gerçekleşti.
-                  </p>
-
-                  <p>
-                    {overStockCount && overStockCount > 0
-                      ? `${overStockCount} ürün fazla stok nedeniyle sermaye bağlıyor. Bu ürünlerin sipariş önceliği düşürülmelidir.`
-                      : "Fazla stok kaynaklı ciddi bir sermaye riski görünmüyor."}
-                  </p>
-
-                  <p>
-                    Doğrulanmış kâr marjı{" "}
-                    <strong>%{profitMargin.toLocaleString("tr-TR")}</strong>.
-                    Sipariş bütçesinin kritik stoklara yönlendirilmesi finansal
-                    verimliliği artıracaktır.
-                  </p>
-                </div>
-              ) : (
-                <p>
-                  Analiz tamamlandığında AYÇA finans değerlendirmesi burada
-                  gösterilecek.
-                </p>
-              )}
-            </section>
-
-            <section className="finance-alert-grid">
-              <div className="finance-alert-card finance-alert-success">
-                <strong>🟢 Kâr Marjı</strong>
-                <span>%{profitMargin.toLocaleString("tr-TR")}</span>
-                <p>Doğrulanmış finansal performans metriği</p>
+            <section className="finance-premium-strip">
+              <div>
+                <span>İŞLEM SAYISI</span>
+                <strong>{transactionCount.toLocaleString("tr-TR")}</strong>
+                <small>Toplam satış işlemi</small>
               </div>
-
-              <div className="finance-alert-card finance-alert-warning">
-                <strong>🟡 Fazla Stok</strong>
-                <span>{overStockCount ?? "-"}</span>
-                <p>Sermaye bağlama riski bulunan ürün</p>
+              <div>
+                <span>ORTALAMA SEPET</span>
+                <strong>{averageSale ? `${averageSale.toLocaleString("tr-TR")} ₺` : "—"}</strong>
+                <small>İşlem başına satış</small>
               </div>
-
-              <div className="finance-alert-card finance-alert-danger">
-                <strong>🔴 Kritik Stok</strong>
-                <span>{metrics?.critical_stock_count ?? "-"}</span>
-                <p>Kayıp satış riski bulunan ürün</p>
+              <div>
+                <span>FAZLA STOK</span>
+                <strong>{overStockCount ?? "—"}</strong>
+                <small>Sermaye riski bulunan ürün</small>
+              </div>
+              <div>
+                <span>VERİ GÜVENİ</span>
+                <strong>%{analysisConfidenceScore}</strong>
+                <small>Analiz güven skoru</small>
               </div>
             </section>
           </>
@@ -3684,6 +3713,26 @@ export default function DashboardPage() {
                 <strong>%{analysisConfidenceScore}</strong>
                 <p>Analiz motorlarının doğrulama oranı</p>
               </div>
+            </section>
+
+            <section className="ayca-decision-card">
+              <div className="ayca-decision-mark">✦</div>
+              <div className="ayca-decision-content">
+                <span>AYÇA ÖNERİYOR · RİSK</span>
+                <strong>
+                  {totalRiskItems > 0
+                    ? `${totalRiskItems} stok sinyalini önem sırasına göre ele al.`
+                    : "Operasyonel risk seviyesi kontrollü görünüyor."}
+                </strong>
+                <p>
+                  {totalRiskItems > 0
+                    ? `${zeroStockCount} sıfır stok, ${criticalStockCount} kritik stok ve ${overStockCount ?? 0} fazla stok sinyali var. Önce satış kaybı yaratabilecek sıfır ve kritik stokları çöz.`
+                    : "Mevcut analizde acil stok müdahalesi gerektiren anlamlı bir risk sinyali oluşmadı."}
+                </p>
+              </div>
+              <button type="button" onClick={() => setIsAssistantDrawerOpen(true)}>
+                Riskleri yorumla <span>→</span>
+              </button>
             </section>
 
             <section className="risk-summary-grid">
@@ -3793,7 +3842,7 @@ export default function DashboardPage() {
                       <th>Stok</th>
                       <th>Satış</th>
                       <th>Seviye</th>
-                      <th>Önerilen Aksiyon</th>
+                      <th>✦ AYÇA Aksiyonu</th>
                     </tr>
                   </thead>
 
@@ -7649,6 +7698,879 @@ export default function DashboardPage() {
             grid-column: auto;
             justify-self: stretch;
             width: 100%;
+          }
+        }
+
+
+        /* AYÇA Briefing — full width dashboard row */
+        .dashboard-command-grid {
+          width: 100% !important;
+          max-width: none !important;
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) !important;
+          gap: 0 !important;
+          align-items: stretch !important;
+        }
+
+        .dashboard-command-grid > .command-card {
+          width: 100% !important;
+          max-width: none !important;
+          min-width: 0 !important;
+          box-sizing: border-box !important;
+        }
+
+        .dashboard-command-grid .ayca-briefing-item {
+          grid-template-columns: 126px minmax(0, 1fr) 132px;
+          column-gap: 18px;
+        }
+
+        .dashboard-command-grid .ayca-briefing-copy strong {
+          font-size: 13px;
+        }
+
+        .dashboard-command-grid .ayca-briefing-copy p {
+          font-size: 10px;
+          line-height: 1.55;
+        }
+
+        .dashboard-command-grid .ayca-briefing-action {
+          min-width: 126px;
+        }
+
+        @media (max-width: 1180px) {
+          .dashboard-command-grid .ayca-briefing-item {
+            grid-template-columns: 112px minmax(0, 1fr);
+          }
+
+          .dashboard-command-grid .ayca-briefing-action {
+            grid-column: 2;
+            justify-self: start;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .dashboard-command-grid .ayca-briefing-item {
+            grid-template-columns: 1fr;
+          }
+
+          .dashboard-command-grid .ayca-briefing-action {
+            grid-column: auto;
+            width: 100%;
+          }
+        }
+
+
+        /* Order Center V1 */
+        .order-center {
+          display: grid;
+          gap: 16px;
+        }
+
+        .order-center-hero {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 260px;
+          gap: 24px;
+          align-items: stretch;
+          padding: 22px 24px;
+          border: 1px solid #e2e8f0;
+          border-radius: 18px;
+          background:
+            radial-gradient(circle at 88% 10%, rgba(6,78,82,.07), transparent 30%),
+            linear-gradient(180deg, #fff 0%, #fbfcfd 100%);
+          box-shadow: 0 8px 26px rgba(15,23,42,.04);
+        }
+
+        .order-center-kicker {
+          display: block;
+          margin-bottom: 7px;
+          color: #0b5558;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: .12em;
+        }
+
+        .order-center-hero h2 {
+          margin: 0;
+          color: #172033;
+          font-size: clamp(22px, 2.2vw, 31px);
+          line-height: 1.12;
+          letter-spacing: -.035em;
+        }
+
+        .order-center-hero p {
+          max-width: 710px;
+          margin: 9px 0 0;
+          color: #7b879a;
+          font-size: 11px;
+          line-height: 1.6;
+          font-weight: 600;
+        }
+
+        .order-center-budget {
+          display: flex;
+          min-width: 0;
+          flex-direction: column;
+          justify-content: center;
+          padding: 17px 18px;
+          border: 1px solid rgba(6,78,82,.10);
+          border-radius: 14px;
+          background: rgba(6,78,82,.035);
+        }
+
+        .order-center-budget span,
+        .order-center-summary span,
+        .order-result-column > span {
+          color: #8a97a9;
+          font-size: 8px;
+          font-weight: 900;
+          letter-spacing: .09em;
+        }
+
+        .order-center-budget strong {
+          margin-top: 7px;
+          overflow: hidden;
+          color: #0b5558;
+          font-size: 24px;
+          line-height: 1.05;
+          letter-spacing: -.04em;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .order-center-budget small {
+          margin-top: 6px;
+          color: #8291a7;
+          font-size: 9px;
+          font-weight: 650;
+        }
+
+        .order-center-summary {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          overflow: hidden;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          background: #fff;
+          box-shadow: 0 6px 20px rgba(15,23,42,.03);
+        }
+
+        .order-center-summary > div {
+          min-width: 0;
+          padding: 15px 18px;
+          border-right: 1px solid #edf1f4;
+        }
+
+        .order-center-summary > div:last-child {
+          border-right: 0;
+        }
+
+        .order-center-summary strong {
+          display: block;
+          margin-top: 6px;
+          color: #172554;
+          font-size: 19px;
+          line-height: 1.1;
+          font-weight: 850;
+          letter-spacing: -.03em;
+        }
+
+        .order-center-summary small {
+          display: block;
+          margin-top: 5px;
+          color: #94a3b8;
+          font-size: 8px;
+          line-height: 1.35;
+          font-weight: 650;
+        }
+
+        .order-center-heading {
+          display: flex;
+          align-items: flex-end;
+          justify-content: space-between;
+          gap: 14px;
+          padding: 3px 2px 0;
+        }
+
+        .order-center-heading h3 {
+          margin: 0;
+          color: #172033;
+          font-size: 15px;
+          font-weight: 900;
+          letter-spacing: -.02em;
+        }
+
+        .order-center-heading p {
+          margin: 4px 0 0;
+          color: #94a3b8;
+          font-size: 9px;
+          font-weight: 650;
+        }
+
+        .order-center-heading > span {
+          padding: 5px 8px;
+          border: 1px solid #dfe6ec;
+          border-radius: 7px;
+          background: #fff;
+          color: #64748b;
+          font-size: 8px;
+          font-weight: 850;
+        }
+
+        .order-center-list {
+          display: grid;
+          gap: 10px;
+        }
+
+        .order-recommendation {
+          position: relative;
+          display: grid;
+          grid-template-columns: 104px minmax(0, 1fr) 170px;
+          gap: 17px;
+          align-items: center;
+          min-width: 0;
+          min-height: 118px;
+          padding: 15px 17px 15px 19px;
+          overflow: hidden;
+          border: 1px solid #e2e8f0;
+          border-radius: 15px;
+          background: #fff;
+          box-shadow: 0 5px 18px rgba(15,23,42,.025);
+        }
+
+        .order-recommendation::before {
+          content: "";
+          position: absolute;
+          inset: 0 auto 0 0;
+          width: 3px;
+          background: #0b5558;
+        }
+
+        .order-recommendation.priority-acil::before,
+        .order-recommendation.priority-kritik::before,
+        .order-recommendation.priority-critical::before {
+          background: #ef4444;
+        }
+
+        .order-recommendation.priority-yuksek::before,
+        .order-recommendation.priority-high::before {
+          background: #f59e0b;
+        }
+
+        .order-recommendation.priority-orta::before,
+        .order-recommendation.priority-medium::before {
+          background: #6366f1;
+        }
+
+        .order-priority-column {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 9px;
+        }
+
+        .order-index {
+          color: #b0bac7;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: .08em;
+        }
+
+        .order-priority-pill {
+          display: inline-flex;
+          align-items: center;
+          min-height: 25px;
+          padding: 5px 8px;
+          border: 1px solid #dce4ea;
+          border-radius: 7px;
+          background: #f8fafc;
+          color: #475569;
+          font-size: 8px;
+          font-weight: 900;
+        }
+
+        .order-product-column {
+          min-width: 0;
+        }
+
+        .order-product-column > strong {
+          display: block;
+          color: #172033;
+          font-size: 13px;
+          line-height: 1.35;
+          font-weight: 900;
+          overflow-wrap: anywhere;
+        }
+
+        .order-product-metrics {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(72px, 1fr));
+          gap: 11px;
+          margin-top: 13px;
+        }
+
+        .order-product-metrics > span {
+          min-width: 0;
+          padding-right: 9px;
+          border-right: 1px solid #edf1f4;
+        }
+
+        .order-product-metrics > span:last-child {
+          border-right: 0;
+        }
+
+        .order-product-metrics small {
+          display: block;
+          color: #a0aaba;
+          font-size: 7px;
+          line-height: 1.2;
+          font-weight: 900;
+          letter-spacing: .06em;
+        }
+
+        .order-product-metrics b {
+          display: block;
+          margin-top: 5px;
+          color: #4b5565;
+          font-size: 10px;
+          font-weight: 850;
+        }
+
+        .order-result-column {
+          min-width: 0;
+          padding: 12px 14px;
+          border: 1px solid rgba(6,78,82,.10);
+          border-radius: 12px;
+          background: rgba(6,78,82,.035);
+          text-align: right;
+        }
+
+        .order-result-column strong {
+          display: block;
+          margin-top: 6px;
+          color: #0b5558;
+          font-size: 19px;
+          line-height: 1.1;
+          font-weight: 900;
+          letter-spacing: -.03em;
+        }
+
+        .order-result-column small {
+          display: block;
+          margin-top: 6px;
+          color: #64748b;
+          font-size: 9px;
+          font-weight: 750;
+        }
+
+        .order-center-empty {
+          display: grid;
+          place-items: center;
+          min-height: 230px;
+          padding: 30px;
+          border: 1px dashed #cbd5e1;
+          border-radius: 16px;
+          background: #fbfcfd;
+          text-align: center;
+        }
+
+        .order-center-empty > span {
+          color: #0b5558;
+          font-size: 24px;
+        }
+
+        .order-center-empty strong {
+          margin-top: 8px;
+          color: #334155;
+          font-size: 14px;
+        }
+
+        .order-center-empty p {
+          max-width: 480px;
+          margin: 6px 0 0;
+          color: #94a3b8;
+          font-size: 10px;
+          line-height: 1.55;
+        }
+
+        @media (max-width: 1100px) {
+          .order-center-hero {
+            grid-template-columns: 1fr;
+          }
+
+          .order-center-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .order-center-summary > div:nth-child(2) {
+            border-right: 0;
+          }
+
+          .order-center-summary > div:nth-child(-n+2) {
+            border-bottom: 1px solid #edf1f4;
+          }
+
+          .order-recommendation {
+            grid-template-columns: 92px minmax(0, 1fr);
+          }
+
+          .order-result-column {
+            grid-column: 2;
+            text-align: left;
+          }
+
+          .order-product-metrics {
+            grid-template-columns: repeat(3, minmax(72px, 1fr));
+          }
+        }
+
+        @media (max-width: 640px) {
+          .order-center-hero {
+            padding: 18px;
+          }
+
+          .order-center-summary {
+            grid-template-columns: 1fr;
+          }
+
+          .order-center-summary > div {
+            border-right: 0;
+            border-bottom: 1px solid #edf1f4;
+          }
+
+          .order-center-summary > div:last-child {
+            border-bottom: 0;
+          }
+
+          .order-recommendation {
+            grid-template-columns: 1fr;
+            gap: 11px;
+            padding: 15px;
+          }
+
+          .order-priority-column {
+            flex-direction: row;
+            align-items: center;
+          }
+
+          .order-product-metrics {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .order-product-metrics > span {
+            border-right: 0;
+          }
+
+          .order-result-column {
+            grid-column: auto;
+            text-align: left;
+          }
+        }
+
+
+        /* AYÇA decision language — operation tabs */
+        .ayca-decision-card {
+          position: relative;
+          display: grid;
+          grid-template-columns: 42px minmax(0, 1fr) auto;
+          gap: 15px;
+          align-items: center;
+          width: 100%;
+          min-width: 0;
+          padding: 16px 18px;
+          overflow: hidden;
+          border: 1px solid rgba(6, 78, 82, .14);
+          border-radius: 15px;
+          background:
+            radial-gradient(circle at 93% 12%, rgba(13, 148, 136, .09), transparent 28%),
+            linear-gradient(135deg, rgba(240, 253, 250, .78), #ffffff 48%, #fbfcfd 100%);
+          box-shadow: 0 7px 22px rgba(15, 23, 42, .035);
+        }
+
+        .ayca-decision-card::after {
+          content: "";
+          position: absolute;
+          inset: 0 auto 0 0;
+          width: 3px;
+          background: linear-gradient(180deg, #0b5558, #14b8a6);
+        }
+
+        .ayca-decision-mark {
+          display: grid;
+          width: 38px;
+          height: 38px;
+          place-items: center;
+          border: 1px solid rgba(6, 78, 82, .12);
+          border-radius: 50%;
+          background: #0b5558;
+          color: #fff;
+          font-size: 17px;
+          box-shadow: 0 7px 18px rgba(6, 78, 82, .16);
+        }
+
+        .ayca-decision-content {
+          min-width: 0;
+        }
+
+        .ayca-decision-content > span {
+          display: block;
+          margin-bottom: 5px;
+          color: #0b5558;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .11em;
+        }
+
+        .ayca-decision-content > strong {
+          display: block;
+          color: #172033;
+          font-size: 13px;
+          line-height: 1.35;
+          font-weight: 900;
+          letter-spacing: -.015em;
+        }
+
+        .ayca-decision-content > p {
+          max-width: 900px;
+          margin: 5px 0 0;
+          color: #718096;
+          font-size: 9px;
+          line-height: 1.55;
+          font-weight: 650;
+        }
+
+        .ayca-decision-card > button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          min-height: 34px;
+          padding: 8px 11px;
+          border: 1px solid rgba(6, 78, 82, .14);
+          border-radius: 9px;
+          background: #fff;
+          color: #0b5558;
+          font-size: 9px;
+          font-weight: 900;
+          cursor: pointer;
+          white-space: nowrap;
+        }
+
+        .ayca-decision-card > button:hover {
+          background: #f0fdfa;
+          transform: translateY(-1px);
+        }
+
+        @media (max-width: 760px) {
+          .ayca-decision-card {
+            grid-template-columns: 38px minmax(0, 1fr);
+          }
+
+          .ayca-decision-card > button {
+            grid-column: 2;
+            justify-self: start;
+          }
+        }
+
+
+        /* Premium Finance */
+        .finance-premium-kpis {
+          width: 100% !important;
+          max-width: 1240px;
+          margin: 0 auto !important;
+          display: grid !important;
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          gap: 18px !important;
+          align-items: stretch;
+        }
+
+        .finance-premium-kpi {
+          appearance: none;
+          text-align: left;
+          width: 100%;
+          min-width: 0;
+          min-height: 136px;
+          padding: 20px 21px 17px;
+          border: 1px solid #e4eaee;
+          border-radius: 18px;
+          background:
+            radial-gradient(circle at 90% 88%, rgba(20,184,166,.10), transparent 24%),
+            linear-gradient(145deg, #fff 0%, #fcfefe 100%);
+          box-shadow: 0 9px 24px rgba(15,23,42,.045);
+          color: inherit;
+        }
+
+        button.finance-premium-kpi { cursor: pointer; }
+
+        .finance-premium-kpi > span {
+          display: block;
+          color: #66758b;
+          font-size: 9px;
+          font-weight: 950;
+          letter-spacing: .08em;
+        }
+
+        .finance-premium-kpi > strong {
+          display: block;
+          margin-top: 13px;
+          color: #0b1b42;
+          font-size: clamp(24px, 2.25vw, 35px);
+          line-height: 1;
+          font-weight: 950;
+          letter-spacing: -.045em;
+          white-space: nowrap;
+        }
+
+        .finance-premium-kpi > p {
+          margin: 10px 0 0;
+          color: #8795aa;
+          font-size: 10px;
+          font-weight: 650;
+        }
+
+        .finance-premium-kpi > em {
+          display: block;
+          margin-top: 9px;
+          color: #0b766f;
+          font-size: 9px;
+          font-style: normal;
+          font-weight: 900;
+        }
+
+        .finance-margin-line {
+          height: 3px;
+          margin-top: 12px;
+          overflow: hidden;
+          border-radius: 99px;
+          background: #edf2f4;
+        }
+
+        .finance-margin-line i {
+          display: block;
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, #0b5558, #2dd4bf);
+        }
+
+        .finance-ayca-decision {
+          width: 100%;
+          max-width: 1240px;
+          margin: 18px auto 0;
+        }
+
+        .finance-premium-chart-card,
+        .finance-premium-panel {
+          border: 1px solid #e5ebef;
+          border-radius: 18px;
+          background: #fff;
+          box-shadow: 0 8px 24px rgba(15,23,42,.035);
+        }
+
+        .finance-premium-chart-card {
+          width: 100%;
+          max-width: 1240px;
+          margin: 18px auto 0;
+          padding: 21px 22px 16px;
+        }
+
+        .finance-premium-section-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 20px;
+        }
+
+        .finance-premium-section-head > div:first-child > span {
+          display: block;
+          margin-bottom: 5px;
+          color: #0b766f;
+          font-size: 8px;
+          font-weight: 950;
+          letter-spacing: .12em;
+        }
+
+        .finance-premium-section-head h2 {
+          margin: 0;
+          color: #13213b;
+          font-size: 18px;
+          font-weight: 950;
+          letter-spacing: -.025em;
+        }
+
+        .finance-premium-section-head p {
+          margin: 5px 0 0;
+          color: #8a97aa;
+          font-size: 9px;
+          font-weight: 650;
+        }
+
+        .finance-chart-legend {
+          display: flex;
+          gap: 13px;
+          color: #64748b;
+          font-size: 9px;
+          font-weight: 800;
+        }
+
+        .finance-chart-legend span {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .finance-chart-legend i {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+        }
+
+        .revenue-dot { background: #0b5558; }
+        .profit-dot { background: #14b8a6; }
+
+        .finance-premium-chart {
+          height: 300px !important;
+          margin-top: 10px;
+        }
+
+        .finance-premium-bottom-grid {
+          width: 100%;
+          max-width: 1240px;
+          margin: 18px auto 0;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 18px;
+        }
+
+        .finance-premium-panel {
+          min-width: 0;
+          padding: 20px;
+        }
+
+        .finance-premium-section-head.compact {
+          margin-bottom: 12px;
+        }
+
+        .finance-product-list {
+          display: grid;
+          gap: 4px;
+        }
+
+        .finance-product-row {
+          display: grid;
+          grid-template-columns: 34px minmax(0, 1fr) auto;
+          gap: 10px;
+          align-items: center;
+          min-width: 0;
+          padding: 10px 5px;
+          border-top: 1px solid #f0f3f5;
+        }
+
+        .finance-product-row > b {
+          color: #a0adba;
+          font-size: 9px;
+          font-weight: 900;
+        }
+
+        .finance-product-row > div {
+          min-width: 0;
+        }
+
+        .finance-product-row > div strong {
+          display: block;
+          overflow: hidden;
+          color: #24324a;
+          font-size: 10px;
+          font-weight: 850;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .finance-product-row > div small {
+          display: block;
+          margin-top: 3px;
+          color: #96a2b2;
+          font-size: 8px;
+          font-weight: 650;
+        }
+
+        .finance-product-row > span {
+          color: #0b5558;
+          font-size: 10px;
+          font-weight: 950;
+          white-space: nowrap;
+        }
+
+        .finance-empty {
+          padding: 24px 0;
+          color: #94a3b8;
+          font-size: 10px;
+        }
+
+        .finance-premium-strip {
+          width: 100%;
+          max-width: 1240px;
+          margin: 18px auto 0;
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          overflow: hidden;
+          border: 1px solid #e5ebef;
+          border-radius: 15px;
+          background: #fff;
+        }
+
+        .finance-premium-strip > div {
+          min-width: 0;
+          padding: 15px 18px;
+          border-right: 1px solid #edf1f3;
+        }
+
+        .finance-premium-strip > div:last-child { border-right: 0; }
+
+        .finance-premium-strip span,
+        .finance-premium-strip small {
+          display: block;
+          color: #8b98aa;
+          font-size: 8px;
+          font-weight: 800;
+        }
+
+        .finance-premium-strip strong {
+          display: block;
+          margin: 6px 0 4px;
+          color: #17233b;
+          font-size: 17px;
+          font-weight: 950;
+        }
+
+        @media (max-width: 1050px) {
+          .finance-premium-kpis,
+          .finance-premium-strip {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          }
+
+          .finance-premium-bottom-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .finance-premium-kpis,
+          .finance-premium-strip {
+            grid-template-columns: 1fr !important;
+          }
+
+          .finance-premium-strip > div {
+            border-right: 0;
+            border-bottom: 1px solid #edf1f3;
+          }
+
+          .finance-premium-strip > div:last-child { border-bottom: 0; }
+
+          .finance-premium-section-head {
+            flex-direction: column;
+          }
+
+          .finance-premium-kpi > strong {
+            white-space: normal;
           }
         }
 
