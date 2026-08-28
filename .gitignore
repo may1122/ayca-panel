@@ -10,3 +10,7 @@ package-lock.json
 __pycache__/
 *.pyc
 *.zip
+
+# Python cache
+__pycache__/
+*.py[cod]
